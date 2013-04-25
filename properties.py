@@ -10,3 +10,6 @@ access_token_secret = 'kxm2cuq9xNaSUBKPxIlUNJI3wKJ57VHmT0h1w1PuLWE'
 
 #log file
 log_file = '%s%s%s' % (os.path.dirname(__file__), os.path.sep, 'result.log')
+
+#retrieving parameters
+cursor_iterations = 5
