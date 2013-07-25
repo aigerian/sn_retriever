@@ -2,9 +2,12 @@
 __author__ = '4ikist'
 
 import json
-import requests
 import base64
 import logging
+import urlparse
+
+from lxml import html
+import requests
 
 from properties import *
 
@@ -12,7 +15,43 @@ from properties import *
 log = logging.getLogger('API')
 
 
-class ApiConnection(object):
+class VkontakteAPI(object):
+    def __init__(self):
+        self.access_token = self.__auth()
+
+
+    def __auth(self):
+        """
+        authenticate in vk with dirty hacks
+        :return: access token
+        """
+        #process first page
+        result = requests.get('https://oauth.vk.com/authorize', params=vk_access_credentials)
+        doc = html.document_fromstring(result.content)
+        inputs = doc.xpath('//input')
+        form_params = {}
+        for el in inputs:
+            form_params[el.attrib.get('name')] = el.value
+        form_params['email'] = vk_login
+        form_params['pass'] = vk_pass
+        form_url = doc.xpath('//form')[0].attrib.get('action')
+        #process second page
+        result = requests.post(form_url, form_params, cookies=result.cookies)
+        doc = html.document_fromstring(result.content)
+        #if already login
+        if 'OAuth Blank' not in doc.xpath('//title')[0].text:
+            submit_url = doc.xpath('//form')[0].attrib.get('action')
+            result = requests.post(submit_url, cookies=result.cookies)
+
+        #retrieving access token from url
+        interested_url = result.url
+        #todo create expires and process error
+        fragment = urlparse.urlparse(interested_url).fragment
+        access_token = [el for el in fragment.split('&') if 'access_token' in el][0][13:]
+        return access_token
+
+
+class TwitterAPI(object):
     def __init__(self):
         self.basic_url = 'https://api.twitter.com'
         token = self.__auth()
@@ -21,7 +60,7 @@ class ApiConnection(object):
 
     def __auth(self):
         log.info('processing auth')
-        issue_key = base64.standard_b64encode('%s:%s' % (consumer_key, consumer_secret))
+        issue_key = base64.standard_b64encode('%s:%s' % (ttr_consumer_key, ttr_consumer_secret))
         headers = {'User-Agent': 'ttr_retr',
                    'Authorization': 'Basic %s' % issue_key,
                    'Content-type': 'application/x-www-form-urlencoded;charset=UTF-8'}
@@ -94,12 +133,33 @@ class ApiConnection(object):
         full_result[list_name] = full_list
         return full_result
 
-    def get_followers(self, user_id=None, screen_name=None):
+    def get_user(self, user_id=None, screen_name=None):
+        """
+        return user representation
+        :param user_id:
+        :param screen_name:
+        :return:
+        """
+        kwargs = {'user_id': user_id, 'screen_name': screen_name}
+        command = "users/show"
+        result = self.get(command, **kwargs)
+        return result
+
+    def get_relations(self, user_id=None, screen_name=None, relation_type='friends'):
+        """
+        returning json object of user relations
+        :param user_id:
+        :param screen_name:
+        :param relation_type: can be followers or friends
+        :return:
+        """
         if not user_id and not screen_name:
             raise APIInException('specify user id or screen name')
+        if relation_type not in ('friends', 'followers'):
+            raise APIInException('specify valid relation type')
 
         kwargs = {'user_id': user_id, 'screen_name': screen_name, 'count': 5000, 'cursor': -1}
-        command = 'followers/ids'
+        command = '%s/ids' % relation_type
 
         first_result = self.get(command, **kwargs)
         full_result = self.get_cursored(first_result, 'ids', command, **kwargs)

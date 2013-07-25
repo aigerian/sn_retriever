@@ -1,23 +1,14 @@
+from contrib.db_connector import db_handler
+
 __author__ = '4ikist'
 
 import json
 import os
 import logging
 
-from contrib.connect import ApiConnection
+from contrib.connect import TwitterAPI, VkontakteAPI
 import properties
 
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler(properties.log_file)
-fh.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s[%(levelname)s] %(name)s : %(message)s')
-fh.setFormatter(formatter)
-ch.setFormatter(formatter)
-logger.addHandler(fh)
-logger.addHandler(ch)
 
 log = logging.getLogger('main')
 
@@ -48,16 +39,5 @@ def get_load_from(command):
 
 
 if __name__ == '__main__':
-    api = ApiConnection()
-    result = api.get_followers(screen_name='MedvedevRussia')
-    json.dump(result, get_dump_to('followers/ids'))
+    api = VkontakteAPI()
 
-    # command1 = 'statuses/user_timeline'
-    # result = api.get(command1, get_dump_to(command1), ** {'screen_name': 'linoleum2k12'})
-    # result = json.load(get_load_from(command1))
-    #
-    # for el in result:
-    #     print el
-    #     print el['text']
-    #     print el['entities']
-    #     print '-------------------------------------------'
