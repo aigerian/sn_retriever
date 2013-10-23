@@ -1,14 +1,17 @@
-from contrib.db_connector import db_handler
-
+# coding=utf-8
 __author__ = '4ikist'
 
-import json
 import os
 import logging
+import re
 
-from contrib.connect import TwitterAPI, VkontakteAPI
-import properties
+import pymorphy2
 
+from contrib.connect import VK_API, FB_API, Ttr_API
+
+morph = pymorphy2.MorphAnalyzer()
+re_words = re.compile(u'[^а-яёА-ЯЁa-zA-Z0-9]+')
+excludes_classes = ['NPRO', 'PRED', 'PREP', 'CONJ', 'PRCL', 'INTJ']
 
 log = logging.getLogger('main')
 
@@ -18,7 +21,7 @@ def mkdir(name):
         os.mkdir(name)
 
 
-def get_dump_to(command):
+def dump_to(command):
     comm_parts = command.split('/')
     mkdir('_dumps')
     os.chdir('_dumps')
@@ -33,11 +36,13 @@ def get_dump_to(command):
     return result
 
 
-def get_load_from(command):
+def load_from(command):
     comm_dir = str(command).replace('/', os.path.sep)
     return open('_dumps%s%s' % (os.path.sep, comm_dir), 'rb')
 
 
 if __name__ == '__main__':
-    api = VkontakteAPI()
+    api = Ttr_API()
+    result = api.get_user_timeline(screen_name='mongodbinc')
+    print result
 

@@ -32,6 +32,7 @@ class db_handler(object):
         self.messages.save(data)
 
 
+
 if __name__ == '__main__':
     handler = db_handler()
     handler.save_message({'text': 'some_data'})

@@ -3,3 +3,4 @@
 *.log
 _dumps
 environment
+dicts
