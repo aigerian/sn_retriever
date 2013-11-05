@@ -1,22 +1,20 @@
 #coding: utf-8
+import time
+
 __author__ = '4ikist'
 
-import json
 import base64
+import json
 import logging
+import re
 import urlparse
-
-from hashlib import sha1
-import hmac
-import binascii
 
 from lxml import html
 import requests
 
-from properties import *
-import re
-
 from facebook import GraphAPI, GraphAPIError
+
+from properties import *
 
 log = logging.getLogger('API')
 
@@ -41,12 +39,14 @@ class FB_API(API):
     """
 
     def __init__(self):
-        access_token = self.__auth().get('access_token')
-        self.graph = GraphAPI(access_token)
         self.log = logging.getLogger("FB_API")
+        access_token = self.__auth().get('access_token')
+        self.log.info('Auth. Access_token: %s' % (access_token))
+        self.graph = GraphAPI(access_token)
 
     def __auth(self):
         s = requests.Session()
+        s.verify = certs_path
         params = {'client_id': fb_app_id, 'redirect_uri': 'https://www.facebook.com/connect/login_success.html'}
         login_result = s.get('https://www.facebook.com/dialog/oauth', params=params)
         doc = html.document_fromstring(login_result.content)
@@ -152,7 +152,7 @@ class FB_API(API):
 
     def _retrieve_with_paging(self, object_id, function, **kwargs):
         """
-        retrieving data use function with paging
+        retrieving data using function with paging
 
         :param: field_name
         :return: [] with data or empty
@@ -361,15 +361,19 @@ class FB_API(API):
         return {'relations': result, 'posting_relations': users_from_feed, 'object': object}
 
 
-    def search(self, query):
+    def search(self, q):
         search_types = ['post', 'user', 'page', 'event', 'group']
         result = {}
 
         for s_type in search_types:
-            s_result = self._retrieve_with_paging('search', self.graph.get_object)
+            s_result = self._retrieve_with_paging('search', self.graph.get_object, **{'q': q, 'type': s_type})
             result[s_type] = s_result
 
         return result
+
+    @property
+    def name(self):
+        return 'fb'
 
 
 class VkAPIException(Exception):
@@ -379,11 +383,19 @@ class VkAPIException(Exception):
 
 
 class VK_API(API):
+    @property
+    def name(self):
+        log.info('return vk')
+        return 'vk'
+
+
     def __init__(self):
+        self.log = logging.getLogger('VK_API')
         self.access_token = self.__auth()
         self.base_url = 'https://api.vk.com/method/'
         self.array_item_process = lambda x: x[1:]
         self.array_count_process = lambda x: x[0]
+
 
     def __auth(self):
         """
@@ -391,8 +403,10 @@ class VK_API(API):
         :return: access token
         """
         #process first page
-        log.info('vkontakte authenticate')
-        result = requests.get('https://oauth.vk.com/authorize', params=vk_access_credentials)
+        self.log.info('vkontakte authenticate')
+        s = requests.Session()
+        s.verify = certs_path
+        result = s.get('https://oauth.vk.com/authorize', params=vk_access_credentials)
         doc = html.document_fromstring(result.content)
         inputs = doc.xpath('//input')
         form_params = {}
@@ -402,22 +416,22 @@ class VK_API(API):
         form_params['pass'] = vk_pass
         form_url = doc.xpath('//form')[0].attrib.get('action')
         #process second page
-        result = requests.post(form_url, form_params, cookies=result.cookies)
+        result = s.post(form_url, form_params)
         doc = html.document_fromstring(result.content)
         #if already login
         if 'OAuth Blank' not in doc.xpath('//title')[0].text:
             submit_url = doc.xpath('//form')[0].attrib.get('action')
-            result = requests.post(submit_url, cookies=result.cookies)
+            result = s.post(submit_url, cookies=result.cookies)
 
         #retrieving access token from url
         parsed_url = urlparse.urlparse(result.url)
         if 'error' in parsed_url.query:
-            log.error('error in authenticate \n%s' % parsed_url.query)
+            self.log.error('error in authenticate \n%s' % parsed_url.query)
             raise VkAPIException(dict([el.split('=') for el in parsed_url.query.split('&')]))
 
         fragment = parsed_url.fragment
         access_token = dict([el.split('=') for el in fragment.split('&')])
-        log.info('get access token: \n%s' % access_token)
+        self.log.info('get access token: \n%s' % access_token)
         return access_token
 
     def get(self, method_name, **kwargs):
@@ -528,31 +542,43 @@ class VK_API(API):
         return result[1:]
 
 
-class Ttr_API(API):
+class TTR_API(API):
+    @property
+    def name(self):
+        return 'ttr'
+
     def __init__(self):
         self.basic_url = 'https://api.twitter.com'
-        token = self.__auth()
-        if token:
-            self.bearer_token = token
+        self.log = logging.getLogger('TTR_API')
+        token = None
+        while not token:
+            self.log.warn('trying to auth in twitter')
+            token = self.__auth()
+            if token:
+                break
+            time.sleep(10)
+        self.bearer_token = token
 
     def __auth(self):
-        log.info('processing auth')
+        s = requests.Session()
+        s.verify = certs_path
+        self.log.info('processing auth')
         issue_key = base64.standard_b64encode('%s:%s' % (ttr_consumer_key, ttr_consumer_secret))
         headers = {'User-Agent': 'ttr_retr',
                    'Authorization': 'Basic %s' % issue_key,
                    'Content-type': 'application/x-www-form-urlencoded;charset=UTF-8'}
-        result = requests.post('%s/oauth2/token' % self.basic_url,
-                               headers=headers,
-                               data='grant_type=client_credentials')
-        log.debug('>> %s \nheaders:\t%s' % (result.request.url, result.request.headers))
-        log.debug('<< [%s] %s' % (result.status_code, result.text))
+        result = s.post('%s/oauth2/token' % self.basic_url,
+                        headers=headers,
+                        data='grant_type=client_credentials')
+        self.log.debug('>> %s \nheaders:\t%s' % (result.request.url, result.request.headers))
+        self.log.debug('<< [%s] %s' % (result.status_code, result.text))
         if result.status_code == 200:
             result_json = json.loads(result.content)
             bearer_token = result_json['access_token']
-            log.info('bearer token: %s' % bearer_token)
+            self.log.info('bearer token: %s' % bearer_token)
             return bearer_token
         else:
-            log.warn('can not auth :(')
+            self.log.warn('can not auth :(')
             return None
 
 
@@ -574,8 +600,8 @@ class Ttr_API(API):
                 raise APIOutException('%s' % result['errors'])
             return result
         except ValueError as e:
-            log.error('result have not contain json object')
-            log.exception(e)
+            self.log.error('result have not contain json object')
+            self.log.exception(e)
 
     def _get_all(self, command, **kwargs):
         all = []
@@ -600,7 +626,7 @@ class Ttr_API(API):
         """
         full_list = cursored_first_result[list_name]
         cursor = cursored_first_result['next_cursor']
-        log.debug('\ngetting cursored results:')
+        self.log.debug('\ngetting cursored results:')
         iter_count = 0
         while True:
             if cursor == 0 or iter_count == cursor_iterations:
@@ -612,8 +638,8 @@ class Ttr_API(API):
             try:
                 batch_result = self.get(command, **kwargs)
             except APIOutException as e:
-                log.exception(e)
-                log.warn('for this request i retrieve only %s %s' % (len(full_list), list_name))
+                self.log.exception(e)
+                self.log.warn('for this request i retrieve only %s %s' % (len(full_list), list_name))
                 return cursored_first_result
 
             if batch_result and 'next_cursor' in batch_result and list_name in batch_result:
@@ -621,7 +647,7 @@ class Ttr_API(API):
                 cursor = batch_result['next_cursor']
             else:
                 break
-        log.info('full list count is %s %s' % (len(full_list), list_name))
+        self.log.info('full list count is %s %s' % (len(full_list), list_name))
         full_result = cursored_first_result
         full_result[list_name] = full_list
         return full_result

@@ -1,0 +1,17 @@
+{% extends "search.html" %}
+{% block menu %}
+<div class='menu'>
+	<a href='/'>Search</a>
+	<a href='/messages'>Messages</a>
+</div>
+{% endblock %}
+
+{% block content %}
+	<div class="users">
+	{% for user in users %}
+		<div class="user">
+		{{user}}
+		</div>
+	{% endfor %}
+	</div>
+{% endblock %}

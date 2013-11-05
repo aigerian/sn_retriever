@@ -4,7 +4,17 @@ file for properties
 __author__ = '4ikist'
 
 import logging
-import os
+import os, sys
+
+
+def module_path():
+    if hasattr(sys, "frozen"):
+        return os.path.dirname(
+            unicode(sys.executable, sys.getfilesystemencoding())
+        )
+    return os.path.dirname(unicode(__file__, sys.getfilesystemencoding()))
+
+certs_path = os.path.join(module_path(), 'cacert.pem')
 
 #facebook application credentials
 fb_app_id = '182482928555387'
@@ -34,15 +44,15 @@ vk_access_credentials = {'client_id': '3784486',
                          'redirect_uri': 'https://oauth.vk.com/blank.html',
                          'display': 'mobile',
                          'v': '4.104',
-                         'response_type':'token'}
+                         'response_type': 'token'}
 #also...
 vk_edit_app_url = 'https://vk.com/editapp?id=3784486&section=options'
 
 
 #log file
-log_file = os.path.join(os.path.dirname(__file__), 'result.log')
+log_file = os.path.join(module_path(), 'result.log')
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 fh = logging.FileHandler(log_file)
 fh.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
@@ -64,10 +74,19 @@ cursor_iterations = 5
 #db_password = 'sederfes'
 
 db_port = 27772
-db_host = 'localhost'
+#db_host = 'localhost'
+db_host = '178.49.13.210'
 db_name = 'ttr'
 db_user = '4ikist'
 db_password = 'sederfes'
+
+db_q_port = 27772
+#db_q_host = 'localhost'
+db_q_host = '178.49.13.210'
+
+db_q_name = 'queue'
+db_q_user = 'q_client'
+db_q_password = 'sederfes_100500'
 
 #db_connection (mongo lab)
 # db_port = 37518
@@ -78,3 +97,11 @@ db_password = 'sederfes'
 
 #dictionaries for pymorphy
 dicts_path = os.path.join(os.path.dirname(__file__), 'dicts', 'ru', 'morphs.pickle')
+
+#queue params
+STATUS_REFRESH_PERIOD_SEC = 1
+GET_TARGET_PERIOD_SEC = 1
+WORKED_STATUS = 'worked'
+GETTED_STATUS = 'getted'
+ENDED_STATUS = 'ended'
+NEW_STATUS = 'new'

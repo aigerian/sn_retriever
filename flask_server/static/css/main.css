@@ -1,0 +1,20 @@
+.form_wrapper{
+	background: yellow;
+	margin: auto;
+ 	width: 300px;
+ 	border-radius: 5px;
+ 	border: solid 1px green;
+}
+#form_input{
+	width: 200px;
+	margin: 10px;
+}
+#form_submit{
+	margin: 10px;
+}
+.search_params{
+	margin: 10px;
+}
+h4{
+	margin: 10px;
+}

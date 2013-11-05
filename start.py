@@ -7,7 +7,7 @@ import re
 
 import pymorphy2
 
-from contrib.connect import VK_API, FB_API, Ttr_API
+from contrib.connect import VK_API, FB_API, TTR_API
 
 morph = pymorphy2.MorphAnalyzer()
 re_words = re.compile(u'[^а-яёА-ЯЁa-zA-Z0-9]+')
@@ -42,7 +42,8 @@ def load_from(command):
 
 
 if __name__ == '__main__':
-    api = Ttr_API()
+    api = TTR_API()
+    api.search()
     result = api.get_user_timeline(screen_name='mongodbinc')
     print result
 
