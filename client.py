@@ -1,69 +1,59 @@
 import random
 import time
+from contrib.api.entities import APIException, APIRequestOverflowException
+from contrib.api.fb import FB_API
+from contrib.api.ttr import TTR_API
+from contrib.api.vk import VK_API
 
 __author__ = '4ikist'
 
 import logging
-import sys, os
-import threading
-
-from contrib.connect import VK_API, FB_API, TTR_API
-from contrib.db_connector import queue_handler
-
-import properties
+import os
 
 
-client_name = 'Client%s' % (random.randint(0, 1000))
+from contrib.queue import QueueWorker
+
+
 log = logging.getLogger('WORKER')
+client_name = '%s_%s' % (os.environ['COMPUTERNAME'], int(time.time()))
 
 
-class Pinger(threading.Thread):
+class Worker(object):
     def __init__(self, client_name=client_name):
-        super(Pinger, self).__init__()
-        self.client_name = client_name
-        self.queue_handler = queue_handler()
-        self.log = logging.getLogger('client pinger')
-
-    def run(self):
-        while True:
-            self.queue_handler.set_worker_status(self.client_name)
-            time.sleep(properties.STATUS_REFRESH_PERIOD_SEC)
-
-
-class Worker(threading.Thread):
-    def __init__(self, client_name=client_name):
-        super(Worker, self).__init__()
-        log.info('starting worker')
-        self.queue_handler = queue_handler()
+        log.info('starting worker %s' % client_name)
+        self.queue_handler = QueueWorker(self.process)
         self.client_name = client_name
         log.info('initializing apis')
         self.apis = {'vk': VK_API(), 'fb': FB_API(), 'ttr': TTR_API()}
 
-    def run(self):
-        while True:
-            target = self.queue_handler.get_new_target(self.client_name)
-            target_body = target['body']
-            api = self.apis[target_body['sn']]
+    def process(self, message):
+        sn = message.get('sn')
+        api = self.apis.get(sn)
+        if not api:
+            return {'success': False, 'data': 'i haven"t this api! '}
+        method = message.get('method')
+        params = message.get('params')
+        log.info('processing message from server [%s] [%s] [%s]' % (sn, method, params))
+        try:
+            result_data = getattr(api, method)(**params)
+            result = {'success': True, 'data': result_data}
+            log.info('message was processed')
+        except APIRequestOverflowException:
+            time.sleep(3600)
+            return None
+        except APIException as e:
+            return {'success': False, 'data': e}
+        except Exception as e:
+            log.exception(e)
+            return {'success': False, 'data': 'we have some problem! [%s]' % e}
+        return result
 
-            log.info(
-                'processing result method: %s, params: %s, sn: %s' % (
-                    target_body['method'], target_body['params'], target_body['sn']))
-            try:
-                target_result = getattr(api, target_body['method'])(**target_body['params'])
-            except Exception as e:
-                log.error('exception %s with result method: %s, params: %s, sn: %s' % (
-                    e, target_body['method'], target_body['params'], target_body['sn']))
-                target_result = {'error': True}
-            result_id = self.queue_handler.add_result(target_result, target_body['sn'])
-            self.queue_handler.resolve_target(target['_id'], result_id)
+    def start(self):
+        self.queue_handler.start()
 
 
 if __name__ == '__main__':
-    client_name = '%s_%s' % (os.environ['COMPUTERNAME'], int(time.time()))
-    pinger = Pinger(client_name=client_name)
-    pinger.start()
-
-    worker = Worker(client_name=client_name)
+    worker = Worker()
     worker.start()
 
 

@@ -15,6 +15,17 @@
 .search_params{
 	margin: 10px;
 }
+.search_params input{
+    margin: 5px;
+}
 h4{
 	margin: 10px;
+}
+
+.search_result_container{
+    margin: 10px;
+}
+.result_state{
+    float: right;
+    padding-bottom: 10px;
 }

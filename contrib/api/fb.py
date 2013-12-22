@@ -1,36 +1,18 @@
-#coding: utf-8
-import time
+from contrib.db.mongo_db_connector import db_handler
 
 __author__ = '4ikist'
 
-import base64
-import json
+from facebook import GraphAPI, GraphAPIError
+
+from contrib.api.entities import API
+from properties import *
+
 import logging
-import re
+
 import urlparse
 
 from lxml import html
 import requests
-
-from facebook import GraphAPI, GraphAPIError
-
-from properties import *
-
-log = logging.getLogger('API')
-
-
-class API(object):
-    def __auth(self):
-        pass
-
-    def get(self, method_name, **kwargs):
-        pass
-
-    def get_relations(self, user_id, relation_type='friends'):
-        pass
-
-    def search(self, q):
-        pass
 
 
 class FB_API(API):
@@ -44,10 +26,26 @@ class FB_API(API):
         self.log.info('Auth. Access_token: %s' % (access_token))
         self.graph = GraphAPI(access_token)
 
+        self.search_types = ['post', 'user', 'page', 'event', 'group']
+        self.user_data_fields = ["tagged", "feed", "links", "notes", "posts", "statuses"]
+        self.user_relations_fields = ["mutualfriends", "friends", "subsribers", "subscribedto", "family"]
+        self.user_relations_group_fields = ["groups", "events", "likes"]
+
+        try:
+            self.db_data = db_handler().create_temp_collection('fb')
+        except Exception as e:
+            self.log.warn(e)
+
     def __auth(self):
         s = requests.Session()
+        s.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:24.0) Gecko/20100101 Firefox/24.0',
+                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                     'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
+                     'Accept-Encoding': 'gzip, deflate'}
+
         s.verify = certs_path
         params = {'client_id': fb_app_id, 'redirect_uri': 'https://www.facebook.com/connect/login_success.html'}
+        #https://www.facebook.com/dialog/oauth?client_id=182482928555387&redirect_uri=https://www.facebook.com/connect/login_success.html
         login_result = s.get('https://www.facebook.com/dialog/oauth', params=params)
         doc = html.document_fromstring(login_result.content)
         inputs = doc.xpath('//input')
@@ -56,8 +54,10 @@ class FB_API(API):
             form_params[el.attrib.get('name')] = el.value
         form_params['email'] = fb_user_email
         form_params['pass'] = fb_user_pass
+        s.headers['Referer'] = login_result.url
 
-        auth_result = s.post('https://www.facebook.com/login.php', data=form_params)
+        auth_url = doc.xpath('//form')[0].attrib.get('action')
+        auth_result = s.post('https://www.facebook.com/%s' % auth_url, data=form_params)
         assert 'Success' in auth_result.content
 
         parse = urlparse.urlparse(auth_result.url)
@@ -180,6 +180,7 @@ class FB_API(API):
         except GraphAPIError as e:
             self.log.error(e)
 
+        # self.db_data.save(result_buff)
         return result_buff
 
 
@@ -229,12 +230,10 @@ class FB_API(API):
         }
         note: in relations_data likes is page which user is liked
         """
-        user_data_fields = ["tagged", "feed", "links", "notes", "posts", "statuses"]
-        user_relations_fields = ["mutualfriends", "friends", "subsribers", "subscribedto", "family"]
-        user_relations_group_fields = ["groups", "events", "likes"]
+
         #retrieving user info
         dirty_result = {}
-        for field in user_data_fields + user_relations_fields:
+        for field in self.user_data_fields + self.user_relations_fields:
             field_result = self._retrieve_with_paging(user_id, self.graph.get_connections, **{'connection_name': field})
             if len(field_result):
                 dirty_result[field] = field_result
@@ -243,7 +242,7 @@ class FB_API(API):
         dirty_result['posting_data'] = {}
         posting_result = []
         data_ids = set()
-        for field in user_data_fields:
+        for field in self.user_data_fields:
             data = dirty_result.pop(field, None)
             if not data:
                 continue
@@ -252,7 +251,7 @@ class FB_API(API):
                     data_ids.add(el['id'])
                     posting_result.append(el)
                 else:
-                    self.log('%s this %s in data ids...' % (el, field))
+                    self.log.debug('%s this %s in data ids...' % (el, field))
                 dirty_result['posting_data'][field] = el
 
 
@@ -270,7 +269,7 @@ class FB_API(API):
 
         #forming relations data
         dirty_result['relations_data'] = {}
-        for field in user_relations_fields:
+        for field in self.user_relations_fields:
             data = dirty_result.pop(field, None)
             if not data:
                 continue
@@ -279,7 +278,7 @@ class FB_API(API):
 
         #forming relations group data
         dirty_result["relations_groups_data"] = {}
-        for field in user_relations_group_fields:
+        for field in self.user_relations_group_fields:
             field_result = self._retrieve_with_paging(user_id, self.graph.get_connections, **{'connection_name': field})
             if len(field_result):
                 if field == 'likes':
@@ -291,13 +290,15 @@ class FB_API(API):
 
     def user_group_info(self, group_id, group_type):
         """
-        group type can be: [group, page, event]
+        group_type can be: [group, page, event]
         :return: {
             object: group object info,
-
+            relations:{id: {'relations':[admin,member]}}
+            posting_relations:{[id, count_likes, comments]}
         }
         """
         result = {}
+        text_data = {}
         if group_type == 'group':
             try:
                 members_result = self._retrieve_with_paging(group_id, self.graph.get_connections,
@@ -307,6 +308,8 @@ class FB_API(API):
                         result[el['id']] = {'relations': ['admin']}
                     else:
                         result[el['id']] = {'relations': ['member']}
+
+                # self.db_data.save(members_result)
             except GraphAPIError as e:
                 self.log.error(e)
 
@@ -331,6 +334,7 @@ class FB_API(API):
                                                       **{'connection_name': 'declined'})
                 result = FB_API._create_relations(result, declined, 'declined')
 
+                # self.db_data.save(result)
             except GraphAPIError as e:
                 self.log.error(e)
 
@@ -349,6 +353,7 @@ class FB_API(API):
                     page_posts_result.append(el)
 
             result = self._retrieve_relations_from_post_data(page_posts_result)
+            # self.db_data.save(result)
 
         feed_result = self._retrieve_with_paging(group_id, self.graph.get_connections, **{'connection_name': 'feed'})
         users_from_feed = self._retrieve_relations_from_post_data(feed_result)
@@ -360,344 +365,20 @@ class FB_API(API):
 
         return {'relations': result, 'posting_relations': users_from_feed, 'object': object}
 
-
-    def search(self, q):
-        search_types = ['post', 'user', 'page', 'event', 'group']
+    def search(self, q, search_type=None):
         result = {}
-
-        for s_type in search_types:
-            s_result = self._retrieve_with_paging('search', self.graph.get_object, **{'q': q, 'type': s_type})
-            result[s_type] = s_result
-
-        return result
-
-    @property
-    def name(self):
-        return 'fb'
-
-
-class VkAPIException(Exception):
-    def __init__(self, params):
-        self.message = str(params)
-        self.args = params
-
-
-class VK_API(API):
-    @property
-    def name(self):
-        log.info('return vk')
-        return 'vk'
-
-
-    def __init__(self):
-        self.log = logging.getLogger('VK_API')
-        self.access_token = self.__auth()
-        self.base_url = 'https://api.vk.com/method/'
-        self.array_item_process = lambda x: x[1:]
-        self.array_count_process = lambda x: x[0]
-
-
-    def __auth(self):
-        """
-        authenticate in vk with dirty hacks
-        :return: access token
-        """
-        #process first page
-        self.log.info('vkontakte authenticate')
-        s = requests.Session()
-        s.verify = certs_path
-        result = s.get('https://oauth.vk.com/authorize', params=vk_access_credentials)
-        doc = html.document_fromstring(result.content)
-        inputs = doc.xpath('//input')
-        form_params = {}
-        for el in inputs:
-            form_params[el.attrib.get('name')] = el.value
-        form_params['email'] = vk_login
-        form_params['pass'] = vk_pass
-        form_url = doc.xpath('//form')[0].attrib.get('action')
-        #process second page
-        result = s.post(form_url, form_params)
-        doc = html.document_fromstring(result.content)
-        #if already login
-        if 'OAuth Blank' not in doc.xpath('//title')[0].text:
-            submit_url = doc.xpath('//form')[0].attrib.get('action')
-            result = s.post(submit_url, cookies=result.cookies)
-
-        #retrieving access token from url
-        parsed_url = urlparse.urlparse(result.url)
-        if 'error' in parsed_url.query:
-            self.log.error('error in authenticate \n%s' % parsed_url.query)
-            raise VkAPIException(dict([el.split('=') for el in parsed_url.query.split('&')]))
-
-        fragment = parsed_url.fragment
-        access_token = dict([el.split('=') for el in fragment.split('&')])
-        self.log.info('get access token: \n%s' % access_token)
-        return access_token
-
-    def get(self, method_name, **kwargs):
-        params = dict({'access_token': self.access_token['access_token']}, **kwargs)
-        result = requests.get('%s%s' % (self.base_url, method_name), params=params)
-        result_object = json.loads(result.content)
-        if 'error' in result_object:
-            raise VkAPIException(result_object)
-        return result_object['response']
-
-    def get_all(self, method_name, batch_size=200, items_process=lambda x: x['items'],
-                count_process=lambda x: x['count'], **kwargs):
-        """
-        getting all items
-        :parameter items_process function returned list of items from result
-        :parameter count_process function returned one digit equals of count from result
-        :returns list of all items
-        """
-        kwargs['count'] = batch_size
-        first_result = self.get(method_name, **kwargs)
-        result = items_process(first_result)
-        count = count_process(first_result)
-        iterations = count / batch_size if count > batch_size else 0
-
-        for el in range(1, iterations + 1):
-            kwargs['offset'] = el * batch_size
-            next_result = items_process(self.get(method_name, **kwargs))
-            result.extend(next_result)
-
-        return result
-
-    def get_friends(self, user_id):
-        command = 'friends.get'
-        kwargs = {'order': 'name',
-                  'fields': vk_fields,
-                  'user_id': user_id}
-        result = self.get(command, **kwargs)
-        return result
-
-    def get_followers(self, user_id):
-        command = 'users.getFollowers'
-        kwargs = {
-            'fields': vk_fields,
-            'user_id': user_id}
-        result = self.get_all(command, batch_size=1000, **kwargs)
-        return result
-
-    def get_posts(self, user_id):
-        command = 'wall.get'
-        kwargs = {'owner_id': user_id, 'filter': 'all', }
-        result = self.get_all(command,
-                              batch_size=100,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
-                              **kwargs)
-        return result
-
-    def get_notes(self, user_id):
-        command = 'notes.get'
-        kwargs = {'user_id': user_id, 'sort': 1}
-        result = self.get_all(command,
-                              batch_size=100,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
-                              **kwargs)
-        return result
-
-    def get_post_comments(self, post_id, owner_id):
-        """
-        :param post_id: the identification of post from wall of user who have -
-        :param owner_id: this id
-        :return: array of comments with who, when and text information
-        """
-        command = 'wall.getComments'
-        kwargs = {'owner_id': owner_id, 'post_id': post_id, 'need_likes': 1, 'sort': 'asc', 'preview_length': '0'}
-        result = self.get_all(command,
-                              batch_size=100,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
-                              **kwargs)
-        return result
-
-    @staticmethod
-    def retrieve_mentions(text):
-        prep = re.compile(u'\[id\d+\|').findall(text)
-        mentions = [el[1:-1] for el in prep]
-        return mentions if len(mentions) > 0 else None
-
-
-    def get_user(self, user_id):
-        """
-        :param user_id: can be one id or some string of user ids with separate  is ','
-        :return: vk_fields of user
-        """
-        command = 'users.get'
-        kwargs = {'user_ids': user_id, 'fields': vk_fields}
-        result = self.get(command, **kwargs)
-        return result
-
-    def search(self, q):
-        """
-        :param q:
-        :return:
-        """
-        command = 'newsfeed.search'
-        kwargs = {'extended': 1, 'q': q, 'count': 1000}
-        result = self.get(command, **kwargs)
-        return result[1:]
-
-
-class TTR_API(API):
-    @property
-    def name(self):
-        return 'ttr'
-
-    def __init__(self):
-        self.basic_url = 'https://api.twitter.com'
-        self.log = logging.getLogger('TTR_API')
-        token = None
-        while not token:
-            self.log.warn('trying to auth in twitter')
-            token = self.__auth()
-            if token:
-                break
-            time.sleep(10)
-        self.bearer_token = token
-
-    def __auth(self):
-        s = requests.Session()
-        s.verify = certs_path
-        self.log.info('processing auth')
-        issue_key = base64.standard_b64encode('%s:%s' % (ttr_consumer_key, ttr_consumer_secret))
-        headers = {'User-Agent': 'ttr_retr',
-                   'Authorization': 'Basic %s' % issue_key,
-                   'Content-type': 'application/x-www-form-urlencoded;charset=UTF-8'}
-        result = s.post('%s/oauth2/token' % self.basic_url,
-                        headers=headers,
-                        data='grant_type=client_credentials')
-        self.log.debug('>> %s \nheaders:\t%s' % (result.request.url, result.request.headers))
-        self.log.debug('<< [%s] %s' % (result.status_code, result.text))
-        if result.status_code == 200:
-            result_json = json.loads(result.content)
-            bearer_token = result_json['access_token']
-            self.log.info('bearer token: %s' % bearer_token)
-            return bearer_token
+        q = unicode(q).encode('utf-8')
+        if not search_type:
+            for s_type in self.search_types:
+                s_result = self._retrieve_with_paging('search', self.graph.get_object, **{'q': q, 'type': s_type})
+                result[s_type] = s_result
         else:
-            self.log.warn('can not auth :(')
-            return None
+            result[search_type] = self._retrieve_with_paging('search', self.graph.get_object,
+                                                             **{'q': q, 'type': search_type})
 
-
-    def get(self, command, dump_to=None, **kwargs):
-        """
-        :param command: - the command for twitter api rest
-        :param dump_to:  - some object which have .write() method
-        :param kwargs:  - command parameters
-        :return: - python object of result twitter api or None
-        :raise: APIOutException with errors description
-        """
-        headers = {'Authorization': 'Bearer %s' % self.bearer_token}
-        result = requests.get('%s/1.1/%s.json' % (self.basic_url, command), headers=headers, params=kwargs)
-        try:
-            result = json.loads(result.content)
-            if dump_to:
-                json.dump(result, dump_to)
-            if hasattr(result, 'errors'):
-                raise APIOutException('%s' % result['errors'])
-            return result
-        except ValueError as e:
-            self.log.error('result have not contain json object')
-            self.log.exception(e)
-
-    def _get_all(self, command, **kwargs):
-        all = []
-        page = 1
-        kwargs['page'] = page
-        while True:
-            try:
-                result = self.get(command, **kwargs)
-                if len(result):
-                    kwargs['page'] += 1
-                    all.extend(result)
-                else:
-                    break
-            except APIOutException as e:
-                break
-        return all
-
-    def _get_cursored(self, cursored_first_result, list_name, command, **kwargs):
-        """
-        input cursored result
-        :return: full result
-        """
-        full_list = cursored_first_result[list_name]
-        cursor = cursored_first_result['next_cursor']
-        self.log.debug('\ngetting cursored results:')
-        iter_count = 0
-        while True:
-            if cursor == 0 or iter_count == cursor_iterations:
-                break
-            iter_count += 1
-            cursor = cursored_first_result['next_cursor']
-            kwargs['cursor'] = cursor
-
-            try:
-                batch_result = self.get(command, **kwargs)
-            except APIOutException as e:
-                self.log.exception(e)
-                self.log.warn('for this request i retrieve only %s %s' % (len(full_list), list_name))
-                return cursored_first_result
-
-            if batch_result and 'next_cursor' in batch_result and list_name in batch_result:
-                full_list.extend(batch_result[list_name])
-                cursor = batch_result['next_cursor']
-            else:
-                break
-        self.log.info('full list count is %s %s' % (len(full_list), list_name))
-        full_result = cursored_first_result
-        full_result[list_name] = full_list
-        return full_result
-
-    def get_user(self, user_id=None, screen_name=None):
-        """
-        return user representation
-        :param user_id:
-        :param screen_name:
-        :return:
-        """
-        kwargs = {'user_id': user_id, 'screen_name': screen_name}
-        command = "users/show"
-        result = self.get(command, **kwargs)
         return result
 
-    def get_user_timeline(self, user_id=None, screen_name=None):
-        params = {'user_id': user_id, 'screen_name': screen_name, 'count': 200, 'include_rts': 1, 'trim_user': 1}
-        command = "statuses/user_timeline"
-        result = self._get_all(command, **params)
-        return result
-
-    def get_relations(self, user_id=None, screen_name=None, relation_type='friends'):
-        """
-        returning json object of user relations
-        :param user_id:
-        :param screen_name:
-        :param relation_type: can be followers or friends
-        :return:
-        """
-        if not user_id and not screen_name:
-            raise APIInException('specify user id or screen name')
-        if relation_type not in ('friends', 'followers'):
-            raise APIInException('specify valid relation type')
-
-        kwargs = {'user_id': user_id, 'screen_name': screen_name, 'count': 5000, 'cursor': -1}
-        command = '%s/ids' % relation_type
-
-        first_result = self.get(command, **kwargs)
-        full_result = self._get_cursored(first_result, 'ids', command, **kwargs)
-        return full_result
-
-    def search(self, q):
-        params = {'count': 100, 'q': q}
-        command = 'search/tweets'
-        tweet_result = self.get(command, **params).get('statuses')
-        return tweet_result
-
-
-class APIOutException(Exception): pass
-
-
-class APIInException(Exception): pass
+if __name__ == '__main__':
+    api = FB_API()
+    result = api.user_group_info('195466193802264','group')
+    print result

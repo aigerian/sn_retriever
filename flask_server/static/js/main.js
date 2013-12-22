@@ -1,65 +1,90 @@
-function printJSON(json) {
-    	$('#json').val(JSON.stringify(json));
-	}
-
-function sendResultFeedback(result_id, feedback){
-		$.ajax({
-			url:'/process_search/'+result_id,
-			method: 'POST',
-			data:feedback
-		});
+function generateUUID() {
+    var d = new Date().getTime();
+    var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = (d + Math.random() * 16) % 16 | 0;
+        d = Math.floor(d / 16);
+        return (c == 'x' ? r : (r & 0x7 | 0x8)).toString(16);
+    });
+    return uuid;
 }
 
-$( document ).ready(function(){
-	var loading_text = $('#loading_text');
-	loading_text.hide();
+function sendResultFeedback(result_id, feedback) {
+    $.ajax({
+        url: '/process_search/' + result_id,
+        method: 'POST',
+        data: feedback
+    });
+}
+function getSearchResult(search_id, container, state) {
+    var stopId = setInterval(function () {
+        $.ajax({
+            url: '/search_result/' + search_id,
+            method: 'POST',
+            success: function (data) {
+                console.log('receiving search data');
+                console.log(data);
+                if (data['success'] == 'true') {
+                    if (data['ended'] == 'true') {
+                        clearInterval(stopId);
+                        state.text('Completed!');
+                        container.jsonEditor(data['result']);
+                    }
+                } else {
+                    clearInterval(stopId);
+                }
+            }
+        });
 
-	var result_menu = $('#result_menu');
-	result_menu.hide();
+    }, 3000);
+}
+function initSearchResult(search_id, search_q, formData) {
+    var srContainer = $('#sr_container');
 
-	$('#result_menu>#good').bind('click', function(){
-		var id = result_menu.attr('target_root_id');
-		sendResultFeedback(id,true);
-	});
+    rc = $('<div/>', {class: 'panel panel-default'});
+    rc.appendTo(srContainer);
 
-	$('#result_menu>#bad').bind('click', function(){
-		var id = result_menu.attr('target_root_id');
-		sendResultFeedback(id,false);
-	});
 
-	$('#search_form').submit(function(event){
-		event.preventDefault();
-		var formData = $(this).serializeArray();
-		var formURL = $(this).attr("action");
-		loading_text.fadeIn(100);
-		result_menu.fadeOut(100);
+    rt = $('<div/>', {class: 'panel-heading'});
+    rt.appendTo(rc);
 
-		$.ajax({
-			url:formURL,
-			method:'POST',
-			data:formData,
-			success:function(data){
-				var opt = {
-					change:function(data){
-						$('#path').text(path);
-					},
-					propertyclick:function(data){
-						json = data;
-    					printJSON(json);
-					},
-					propertyElement:'<input>',
-					valueElement:'<input>'
-				};
-				if (data['success'] == 'true'){
-					$('#search_result').jsonEditor(data['result'], opt);
-					result_menu.attr('target_root_id',data['target_root'])
-				}
-			},
-			complete:function(){
-				loading_text.fadeOut(100);		
-				result_menu.fadeIn(100);
-			}
-		})
-		return false;
-	});
+    rtc = $('<a/>', {'data-toggle': 'collapse', 'data-parent': 'sr_container', href: '#' + search_id});
+    rtc.appendTo(rt);
+
+    rt_name = $('<div/>', {class: 'result_name'});
+    rt_state = $('<div/>', {class: 'result_state'});
+    rt_name.text('Search for: ' + search_q);
+    rt_state.text('Please wait...');
+    rt_state.appendTo(rtc);
+    rt_name.appendTo(rtc);
+
+    rb = $('<div/>', {class: 'panel-collapse collapse', id: search_id});
+    rb.appendTo(rc);
+
+    rbc = $('<div/>', {class: 'panel-body json-editor'});
+    rbc.appendTo(rb);
+    console.log(formData);
+    formData.push({name: 'search_id', value: search_id});
+    $.ajax({
+        url: '/search',
+        method: 'POST',
+        data: formData,
+        success: function (data) {
+            console.log('receiving search');
+            console.log(data);
+            if (data['success'] == 'true') {
+                getSearchResult(search_id, rbc, rt_state);
+            }
+        }
+    });
+}
+
+$(document).ready(function () {
+
+    $('#search_form').submit(function (event) {
+        event.preventDefault();
+        var formData = $(this).serializeArray();
+        var search_q = $(this).find('#form_input').val();
+        var search_id = generateUUID();
+        initSearchResult(search_id, search_q, formData);
+    });
 });

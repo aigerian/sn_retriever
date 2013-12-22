@@ -4,44 +4,44 @@
 <head>
     <title>Social Nets loading</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/jsoneditor.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/jsoneditor_.css') }}"/>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}"/>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/jquery.jsoneditor.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jsoneditor.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
 </head>
 {% endblock %}
 <body>
 {% block menu %}
 <div class='menu'>
-	<a href='/users'>Users</a>
-	<a href='/messages'>Messages</a>
+    <a href='/users'>Users</a>
+    <a href='/messages'>Messages</a>
 </div>
 {% endblock %}
 {% block content %}
 <div class='form_wrapper'>
-	<h4>Here you can type some search request</h4>
-	<form id="search_form" action="/search" method="post">
-		<div class="search_params">
-			<input type="checkbox" name="ttr" value="ttr" checked>Twitter<br>
-			<input type="checkbox" name="fb" value="fb" checked>Facebook<br>
-			<input type="checkbox" name="vk" value="vk" checked>Vkontakte<br> 
-		</div>
-		
-	    <input type="text" name="q" id='form_input'>
-	    
-	    <input type="submit" value="Поиск" id='form_submit'>
-	</form>	
+    <h4>Here you can type some search request</h4>
+
+    <form id="search_form" action="/search" method="post">
+        <div class="search_params">
+            <input type="checkbox" name="ttr" value="ttr" checked> Twitter<br>
+            <input type="checkbox" name="fb" value="fb" checked> Facebook<br>
+            <input type="checkbox" name="vk" value="vk" checked> Vkontakte<br>
+        </div>
+
+        <input type="text" name="q" id='form_input'>
+
+        <input type="submit" value="Поиск" id='form_submit'>
+    </form>
 </div>
-<pre id="path"></pre>
-<div id="search_result" class='json-editor'>
+
+
+<div class='search_result_container' id='sr_container'>
 </div>
-<div id='result_menu'>
-	<button id='good'>USE</button>
-	<button id='bad'>Not USE</button>
-</div>
-<span id='loading_text'>
-	Please wait while loading data...
-</span>
+
 {% endblock %}
 </body>
 </html>

@@ -14,6 +14,7 @@ def module_path():
         )
     return os.path.dirname(unicode(__file__, sys.getfilesystemencoding()))
 
+
 certs_path = os.path.join(module_path(), 'cacert.pem')
 
 #facebook application credentials
@@ -74,19 +75,10 @@ cursor_iterations = 5
 #db_password = 'sederfes'
 
 db_port = 27772
-#db_host = 'localhost'
-db_host = '178.49.13.210'
+db_host = 'localhost'
 db_name = 'ttr'
 db_user = '4ikist'
 db_password = 'sederfes'
-
-db_q_port = 27772
-#db_q_host = 'localhost'
-db_q_host = '178.49.13.210'
-
-db_q_name = 'queue'
-db_q_user = 'q_client'
-db_q_password = 'sederfes_100500'
 
 #db_connection (mongo lab)
 # db_port = 37518
@@ -95,13 +87,11 @@ db_q_password = 'sederfes_100500'
 # db_user = '4ikist'
 # db_password = 'sederfes'
 
+#neo4j params
+gdb_host = 'http://localhost:7474/db/data'
+
 #dictionaries for pymorphy
 dicts_path = os.path.join(os.path.dirname(__file__), 'dicts', 'ru', 'morphs.pickle')
 
-#queue params
-STATUS_REFRESH_PERIOD_SEC = 1
-GET_TARGET_PERIOD_SEC = 1
-WORKED_STATUS = 'worked'
-GETTED_STATUS = 'getted'
-ENDED_STATUS = 'ended'
-NEW_STATUS = 'new'
+queue_host = 'localhost'
+queue_name = 'sn_queue'

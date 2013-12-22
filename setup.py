@@ -5,6 +5,6 @@ import py2exe
 setup(
     windows=[{'script': 'client.py'}],
     options={
-        'py2exe': {'includes': ['lxml.etree', 'lxml._elementpath', 'gzip', 'facebook', 'requests'],
+        'py2exe': {'includes': ['lxml.etree', 'lxml._elementpath', 'gzip', 'facebook', 'requests', 'pika'],
                    'compressed': True}},
 )

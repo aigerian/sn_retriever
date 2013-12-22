@@ -1,13 +1,17 @@
 # coding=utf-8
+from threading import Thread
+
 __author__ = '4ikist'
 
 import os
 import logging
 import re
-
+import time
 import pymorphy2
 
 from contrib.connect import VK_API, FB_API, TTR_API
+from contrib.queue import QueueWorker, QueueServer
+
 
 morph = pymorphy2.MorphAnalyzer()
 re_words = re.compile(u'[^а-яёА-ЯЁa-zA-Z0-9]+')
@@ -41,9 +45,48 @@ def load_from(command):
     return open('_dumps%s%s' % (os.path.sep, comm_dir), 'rb')
 
 
-if __name__ == '__main__':
-    api = TTR_API()
-    api.search()
-    result = api.get_user_timeline(screen_name='mongodbinc')
-    print result
+def process(message):
+    log.info("process::: %s" % message)
+    return {'ok': message}
 
+
+if __name__ == '__main__':
+
+    worker1 = QueueWorker(process)
+    worker1.start()
+
+    #server1 = QueueServer()
+    #server2 = QueueServer()
+    #
+    #
+    #
+    #server1.send_message({'hi': 'from server 1 0'})
+    #time.sleep(1)
+    #server1.send_message({'hi': 'from server 1 1'})
+    #time.sleep(1)
+    #server1.send_message({'hi': 'from server 1 2'})
+    #time.sleep(1)
+    #server1.send_message({'hi': 'from server 1 3'})
+    #time.sleep(1)
+    #
+    #server2.send_message({'hi': 'from server 2 0'})
+    #time.sleep(1)
+    #server2.send_message({'hi': 'from server 2 1'})
+    #time.sleep(1)
+    #server2.send_message({'hi': 'from server 2 2'})
+    #time.sleep(1)
+    #server2.send_message({'hi': 'from server 2 3'})
+    #time.sleep(1)
+    #server2.send_message({'hi': 'from server 2 4'})
+    #time.sleep(1)
+    #
+    #server1.send_message({'hi': 'from server 1 4'})
+    #time.sleep(1)
+    #
+    #server2.send_message({'hi': 'from server 2 5'})
+    #time.sleep(1)
+    #
+    #server1.send_message({'hi': 'from server 1 5'})
+    #time.sleep(1)
+    #
+    #

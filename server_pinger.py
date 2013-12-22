@@ -1,9 +1,9 @@
 __author__ = '4ikist'
 import logging
-
-from contrib.db_connector import queue_handler
 import threading
 import time
+
+from contrib.db.mongo_db_connector import queue_handler
 import properties
 
 log = logging.getLogger('server')
