@@ -1,0 +1,7 @@
+flask
+pymorphy2
+pika
+requests
+facebook-sdk
+lxml
+py2neo

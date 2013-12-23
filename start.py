@@ -9,7 +9,6 @@ import re
 import time
 import pymorphy2
 
-from contrib.connect import VK_API, FB_API, TTR_API
 from contrib.queue import QueueWorker, QueueServer
 
 
@@ -51,42 +50,7 @@ def process(message):
 
 
 if __name__ == '__main__':
-
-    worker1 = QueueWorker(process)
-    worker1.start()
-
-    #server1 = QueueServer()
-    #server2 = QueueServer()
-    #
-    #
-    #
-    #server1.send_message({'hi': 'from server 1 0'})
-    #time.sleep(1)
-    #server1.send_message({'hi': 'from server 1 1'})
-    #time.sleep(1)
-    #server1.send_message({'hi': 'from server 1 2'})
-    #time.sleep(1)
-    #server1.send_message({'hi': 'from server 1 3'})
-    #time.sleep(1)
-    #
-    #server2.send_message({'hi': 'from server 2 0'})
-    #time.sleep(1)
-    #server2.send_message({'hi': 'from server 2 1'})
-    #time.sleep(1)
-    #server2.send_message({'hi': 'from server 2 2'})
-    #time.sleep(1)
-    #server2.send_message({'hi': 'from server 2 3'})
-    #time.sleep(1)
-    #server2.send_message({'hi': 'from server 2 4'})
-    #time.sleep(1)
-    #
-    #server1.send_message({'hi': 'from server 1 4'})
-    #time.sleep(1)
-    #
-    #server2.send_message({'hi': 'from server 2 5'})
-    #time.sleep(1)
-    #
-    #server1.send_message({'hi': 'from server 1 5'})
-    #time.sleep(1)
-    #
-    #
+    from pymorphy2 import tokenizers, utils
+    words = tokenizers.simple_word_tokenize(u'приветики шитблетики ! вот так как сяк - Алинушка kiss kiss  @alina #hashtag http://privet-privet.com; interest $$$$ ^mimimi^ foo bar bazi have %')
+    for word in words:
+        print word

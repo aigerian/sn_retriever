@@ -29,7 +29,7 @@ class Neo4j_handler(DataBase):
         :return: list of hashes with type of words and inclusions
         """
         import re
-        reg_word = re.compile(u'(@|#)?[a-zA-Zа-яА-Я0-9]+')
+        reg_word = re.compile(u'[^a-zA-Zа-яА-Я0-9-@#:\/_&\^%$!()=\[\]|/]+')
 
 
     def get_users(self):
