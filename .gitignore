@@ -2,5 +2,5 @@
 *.pyc
 *.log
 _dumps
-environment
+sn_retr_env
 dicts
