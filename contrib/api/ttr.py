@@ -1,24 +1,43 @@
+import datetime
+
 __author__ = '4ikist'
 
 import base64
 import json
 import logging
-import re
-import urlparse
-
-from lxml import html
-import requests
 import time
 
-
+import requests
 from properties import *
 from contrib.api.entities import API, APIRequestOverflowException
+
+user_info = [
+    'id',
+    'verified',
+    'followers_count',
+    'statuses_count',
+    'description',
+    'friends_count',
+    'screen_name',
+    'lang',
+    'favourites_count',
+    'name',
+    'created_at', #use datetime
+    'contributors_enabled',
+    'protected',
+    'default_profile',
+    'status', #get created at and text
+]
 
 
 class TTR_API(API):
     @property
     def name(self):
         return 'ttr'
+
+    @staticmethod
+    def get_dt(input):
+        return datetime.datetime.strptime(input, '%a %b %d %H:%M:%S +0000 %Y')
 
     def __init__(self):
         self.basic_url = 'https://api.twitter.com'
@@ -125,17 +144,47 @@ class TTR_API(API):
         full_result[list_name] = full_list
         return full_result
 
+
     def get_user(self, user_id=None, screen_name=None):
         """
         return user representation
         :param user_id:
         :param screen_name:
         :return:
+            user information: [
+            'id',
+            'verified',
+            'followers_count',
+            'statuses_count',
+            'description',
+            'friends_count',
+            'screen_name',
+            'lang',
+            'favourites_count',
+            'name',
+            'created_at [dt]',
+            'contributors_enabled',
+            'protected',
+            'default_profile',
+            'status - created_at',
+            'status - text',
+            ]
         """
+
         kwargs = {'user_id': user_id, 'screen_name': screen_name}
         command = "users/show"
         result = self.get(command, **kwargs)
-        return result
+        final_result = {}
+        if result and isinstance(result, dict):
+            for el in user_info:
+                if el == 'status':
+                    final_result[el + '_created_at'] = TTR_API.get_dt(result.get(el)['created_at'])
+                    final_result[el + '_text'] = result.get(el)['text']
+                elif el == 'created_at':
+                    final_result[el] = TTR_API.get_dt(result.get(el))
+                else:
+                    final_result[el] = result.get(el)
+        return final_result
 
     def get_user_timeline(self, user_id=None, screen_name=None):
         params = {'user_id': user_id, 'screen_name': screen_name, 'count': 200, 'include_rts': 1, 'trim_user': 1}
@@ -156,7 +205,7 @@ class TTR_API(API):
 
         first_result = self.get(command, **kwargs)
         full_result = self._get_cursored(first_result, 'ids', command, **kwargs)
-        return full_result
+        return full_result[u'ids']
 
     def search(self, q):
         params = {'count': 100, 'q': q}

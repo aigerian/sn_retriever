@@ -1,22 +1,20 @@
 # coding=utf-8
-from threading import Thread
 
 __author__ = '4ikist'
 
-import os
 import logging
+import os
 import re
-import time
-import pymorphy2
 
-from contrib.queue import QueueWorker, QueueServer
+from pymorphy2 import MorphAnalyzer
 
-
-morph = pymorphy2.MorphAnalyzer()
-re_words = re.compile(u'[^а-яёА-ЯЁa-zA-Z0-9]+')
-excludes_classes = ['NPRO', 'PRED', 'PREP', 'CONJ', 'PRCL', 'INTJ']
+from contrib.api.ttr import TTR_API
+from contrib.timers import stopwatch
 
 log = logging.getLogger('main')
+
+morph = MorphAnalyzer()
+excludes_classes = ['NPRO', 'PRED', 'PREP', 'CONJ', 'PRCL', 'INTJ']
 
 
 def mkdir(name):
@@ -44,13 +42,33 @@ def load_from(command):
     return open('_dumps%s%s' % (os.path.sep, comm_dir), 'rb')
 
 
-def process(message):
-    log.info("process::: %s" % message)
-    return {'ok': message}
+url_reg = re.compile(
+    '((http[s]?:\/\/)?(\w+)(-\w+)?(\.\w+)+(:\d+)?(\/[\w\d]*\.?[\w\d]*)*(\?[\w\d]*(=[\w\d]*)?(&[\w\d]*(=[\w\d]*)?)*)?(#[\w\d]*)?)')
+
+split_reg = re.compile(u'[^a-zA-Z0-9а-яёА-ЯЁ@#\*_-]+')
+
+
+
+
+@stopwatch
+def test(n):
+    for i in range(n):
+        j = i * i
+        x = []
+        x.append(j)
+        y = {}
+        y[i] = x[:]
 
 
 if __name__ == '__main__':
-    from pymorphy2 import tokenizers, utils
-    words = tokenizers.simple_word_tokenize(u'приветики шитблетики ! вот так как сяк - Алинушка kiss kiss  @alina #hashtag http://privet-privet.com; interest $$$$ ^mimimi^ foo bar bazi have %')
-    for word in words:
-        print word
+    ttr = TTR_API()
+    result = [el['text'] for el in ttr.search(u'чеснок')]
+    for el in result:
+        log.info('[%s]' % el)
+        processed = process_message(el)
+        for token in processed:
+            log.info('\ttoken start')
+            for token_el in token:
+                log.info('\t[%s]\t%s' % (token_el['type'], token_el['content']))
+            log.info('\ttoken stop\n')
+        log.info('----------------\n')

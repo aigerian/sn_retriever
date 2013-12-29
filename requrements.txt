@@ -1,7 +1,10 @@
 flask
 pymorphy2
+pymorphy2-dicts
+DAWG-Python >= 0.7
 pika
 requests
 facebook-sdk
 lxml
 py2neo
+#neo4jrestclient

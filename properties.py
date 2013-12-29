@@ -89,7 +89,7 @@ db_password = 'sederfes'
 
 #neo4j params
 gdb_host = 'http://localhost:7474/db/data'
-
+gdb_path = 'C:\Users\4ikist\Documents\Neo4j\default.graphdb'
 #dictionaries for pymorphy
 dicts_path = os.path.join(os.path.dirname(__file__), 'dicts', 'ru', 'morphs.pickle')
 
