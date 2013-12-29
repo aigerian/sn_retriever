@@ -4,8 +4,8 @@ __author__ = '4ikist'
 
 import logging
 
-from py2neo import neo4j, node
-
+#from py2neo import neo4j, node
+from neo4jrestclient.client import GraphDatabase
 from contrib.db import DataBase
 import properties
 
@@ -24,16 +24,17 @@ class Neo4j_handler(DataBase):
         return '_'.join([str(f), str(t), str(rtype)])
 
     def __init__(self, truncated=False):
-        self.db = neo4j.GraphDatabaseService(properties.gdb_host)
+        self.db = GraphDatabase(properties.gdb_host)
         if truncated:
-            self.db.clear()
+            self.db.query(q=""" MATCH (n) OPTIONAL MATCH (n)-[r]-() DELETE n,r """)
 
-        self.index_users = self.db.get_or_create_index(neo4j.Node, 'users')
-        self.index_words = self.db.get_or_create_index(neo4j.Node, 'words')
+        self.index_users = self.db.nodes.indexes.create('users')
+        self.index_words = self.db.nodes.indexes.create('words')
 
-        self.index_relations_users = self.db.get_or_create_index(neo4j.Relationship, 'words_relations')
-        self.index_relations_words = self.db.get_or_create_index(neo4j.Relationship, 'users_relations')
-        self.index_relations_hybrid = self.db.get_or_create_index(neo4j.Relationship, 'hybrid_relations')
+        self.index_relations_users = self.db.relationships.indexes.create('words_relations')
+        self.index_relations_words = self.db.relationships.indexes.create('users_relations')
+        self.index_relations_hybrid = self.db.relationships.indexes.create('hybrid_relations')
+
 
     def get_user(self, user_id):
         result_list = self.index_users.get('sn_id', user_id)
@@ -42,7 +43,10 @@ class Neo4j_handler(DataBase):
         return None
 
     def save_relation(self, from_, to_, relation_type='friend', relation_data={}):
-        rel, = self.db.create((from_, relation_type, to_, relation_data))
+        rel = self.db.relationships.create(from_, relation_type, to_)
+        if isinstance(relation_data, dict):
+            for k, v in relation_data.iteritems():
+                rel[k] = v
         if relation_type == rt_comes:
             self.index_relations_words.add('wr',
                                            Neo4j_handler.create_relation_index(from_._id, to_._id, relation_type),
@@ -78,8 +82,8 @@ class Neo4j_handler(DataBase):
         """
         previous_el = None
         for token in message:
-            token_node, = self.db.create(node(token))
-            token_node.add_labels('word')
+            token_node = self.db.nodes.create(**token)
+            token_node.labels.add('word')
             self.index_words.add('content', token.get('content'), token_node)
             #word - [comes] - word
             if previous_el:
@@ -94,13 +98,13 @@ class Neo4j_handler(DataBase):
 
             previous_el = token_node
 
+    #todo
     def get_users(self, prop_name=None, prop_val=None):
         return self.db.find('user', prop_name, prop_val)
 
     def save_user(self, user):
-        log.info('saving user:\n%s' % user)
-        user_node, = self.db.create(node(user))
-        user_node.add_labels('user')
+        user_node = self.db.nodes.create(**user)
+        user_node.labels.add('user')
         self.index_users.add('sn_id', user.get(u'id'), user_node)
         return user_node
 
@@ -110,7 +114,6 @@ class Neo4j_handler(DataBase):
 
     def get_path(self, from_node, to_node):
         pass
-
 
 
 if __name__ == '__main__':

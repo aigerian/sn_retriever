@@ -7,4 +7,4 @@ requests
 facebook-sdk
 lxml
 py2neo
-#neo4jrestclient
+neo4jrestclient
