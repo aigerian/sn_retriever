@@ -1,4 +1,6 @@
 # coding=utf-8
+from contrib.timers import stopwatch
+from neo4jrestclient.utils import text_type
 
 __author__ = '4ikist'
 
@@ -10,7 +12,6 @@ from contrib.db import DataBase
 import properties
 
 #temp imports
-from contrib.utils import process_message
 
 rt_say = 'SAY'
 rt_comes = 'COMES'
@@ -98,9 +99,8 @@ class Neo4j_handler(DataBase):
 
             previous_el = token_node
 
-    #todo
-    def get_users(self, prop_name=None, prop_val=None):
-        return self.db.find('user', prop_name, prop_val)
+    def get_users(self):
+        return self.index_users.iteritems()
 
     def save_user(self, user):
         user_node = self.db.nodes.create(**user)
@@ -112,31 +112,42 @@ class Neo4j_handler(DataBase):
         raise NotImplementedError
 
 
-    def get_path(self, from_node, to_node):
-        pass
+    def get_paths(self, from_node, to_node, rel_type, direct=False):
+        result = self.db.query(q="""
+        START f_n=node(%s), t_n=node(%s)
+        MATCH p = shortestPath(f_n-[:%s*]-%st_n)
+        RETURN p, length(p)
+         """ % (from_node.id, to_node.id, rel_type, '>' if direct else ''),
+                               returns=([], text_type))
+        print result
+        return result
+
+
+@stopwatch
+def test_user_loads(ttr):
+    neo = Neo4j_handler(truncated=True)
+
+    def save_friends(user, depth=0):
+        if depth > 3:
+            return
+        else:
+            depth += 1
+        n_user = neo.save_user(user)
+        user1_friends_ids = ttr.get_relations(user_id=user.get(u'id'), relation_type='friends')
+        for el in user1_friends_ids[0:10 if len(user1_friends_ids) > 10 else len(user1_friends_ids)]:
+            user_friend = ttr.get_user(user_id=el)
+            n_user_friend = neo.save_user(user_friend)
+            neo.save_relation(n_user, n_user_friend, relation_type='friend')
+            save_friends(user_friend, depth)
+
+    user = ttr.get_user(screen_name='linoleum2k12')
+    save_friends(user)
 
 
 if __name__ == '__main__':
+    # Neo4j_handler(truncated=True)
     from contrib.api.ttr import TTR_API
 
     ttr = TTR_API()
-    user = ttr.get_user(screen_name='linoleum2k12')
-
-    user2_id = ttr.get_relations(user.get(u'id'))[0]
-    user2 = ttr.get_user(user_id=user2_id)
-
-    neo = Neo4j_handler(truncated=True)
-    uid1 = neo.save_user(user)
-    uid2 = neo.save_user(user2)
-
-    neo.save_relation(uid1, uid2, 'friend')
-    neo.save_relation(uid2, uid1, 'follower')
-
-    timeline = ttr.get_user_timeline(screen_name='linoleum2k12')
-    for el in timeline:
-        text = el.get(u'text')
-        message = process_message(text)
-        neo.save_user_message(message, uid1)
-
-    user1_saved = neo.get_user(user.get(u'id'))
-    assert user1_saved == uid1
+    # test_user_loads(ttr)
+    ttr.get_relations(screen_name='linoleum2k12')

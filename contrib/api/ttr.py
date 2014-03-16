@@ -1,214 +1,211 @@
-import datetime
-
-__author__ = '4ikist'
-
-import base64
-import json
-import logging
+import random
+import threading
+from datetime import datetime, timedelta
 import time
+from birdy.twitter import UserClient, BirdyException, TwitterApiError
+from contrib.api.proxy import ProxyHandler
+from contrib.db.mongo_db_connector import db_handler
+import properties
 
-import requests
-from properties import *
-from contrib.api.entities import API, APIRequestOverflowException
+max_apps_count = len(properties.ttr_access_tokens) + 1
+log = properties.logger.getChild('TTR')
 
-user_info = [
-    'id',
-    'verified',
-    'followers_count',
-    'statuses_count',
-    'description',
-    'friends_count',
-    'screen_name',
-    'lang',
-    'favourites_count',
-    'name',
-    'created_at', #use datetime
-    'contributors_enabled',
-    'protected',
-    'default_profile',
-    'status', #get created at and text
-]
+wait_times = {'api/followers/ids': 3600 / 14,
+              'api/friends/ids': 3600 / 14,
+              'api/users/show': 3600 / 175,
+              'api/statuses/user_timeline': 3600 / 290,
+              'api/search/tweets':3600/440}
 
 
-class TTR_API(API):
-    @property
-    def name(self):
-        return 'ttr'
+class LimitHandler(object):
+    def __init__(self):
+        self.requests_types = {}
 
-    @staticmethod
-    def get_dt(input):
-        return datetime.datetime.strptime(input, '%a %b %d %H:%M:%S +0000 %Y')
+    def _get_first(self, list_of_dates):
+        biggest_delta = None
+        best_key = None
+        for k, v in list_of_dates.iteritems():
+            if v is None:
+                biggest_delta, best_key = timedelta(seconds=999), k
+                break
+            current_delta = datetime.now() - v
+            if not biggest_delta or not best_key:
+                biggest_delta, best_key = current_delta, k
+            else:
+                if biggest_delta < current_delta:
+                    biggest_delta, best_key = current_delta, k
+
+        return best_key, biggest_delta.seconds
+
+    def get_credentials_number(self, request_name):
+        if self.requests_types.get(request_name):
+            credential_number, seconds = self._get_first(self.requests_types[request_name])
+        else:
+            self.requests_types[request_name] = dict([(el, None) for el in range(1, max_apps_count)])
+            credential_number, seconds = random.randint(1, max_apps_count - 1), 999
+
+        wait_seconds = wait_times[request_name] - seconds
+        log.debug('best credentials is %i and will wait %i\ncredentials times:\n%s' % (
+            credential_number,
+            wait_seconds if wait_seconds > 0 else 0,
+            '\n'.join(
+                ["%i : %s%s" % (k, v.strftime('[%H:%M:%S]') if v else None, '<-' if k == credential_number else '') for
+                 k, v in
+                 self.requests_types[request_name].iteritems()])))
+
+        return credential_number, wait_seconds if wait_seconds > 0 else 0
+
+    def consider_credentials_number(self, request_name, credential_number, request_time):
+        if self.requests_types.get(request_name):
+            self.requests_types[request_name][credential_number] = request_time
+        else:
+            self.requests_types[request_name] = dict(
+                [(el, None if el != credential_number else request_time) for el in range(1, max_apps_count)])
+
+
+class TTR_API(object):
+    work_end = 'work_end'
 
     def __init__(self):
-        self.basic_url = 'https://api.twitter.com'
-        self.log = logging.getLogger('TTR_API')
-        token = None
-        while not token:
-            self.log.warn('trying to auth in twitter')
-            token = self.__auth()
-            if token:
-                break
-            time.sleep(10)
-        self.bearer_token = token
+        self.credential_number = 1
+        self.proxy_handler = ProxyHandler()
+        self.client = UserClient(None, None)
+        self.limit_handler = LimitHandler()
 
-    def __auth(self):
-        s = requests.Session()
-        s.verify = certs_path
-        self.log.info('processing auth')
-        issue_key = base64.standard_b64encode('%s:%s' % (ttr_consumer_key, ttr_consumer_secret))
-        headers = {'User-Agent': 'ttr_retr',
-                   'Authorization': 'Basic %s' % issue_key,
-                   'Content-type': 'application/x-www-form-urlencoded;charset=UTF-8'}
-        result = s.post('%s/oauth2/token' % self.basic_url,
-                        headers=headers,
-                        data='grant_type=client_credentials')
-        self.log.debug('>> %s \nheaders:\t%s' % (result.request.url, result.request.headers))
-        self.log.debug('<< [%s] %s' % (result.status_code, result.text))
-        if result.status_code == 200:
-            result_json = json.loads(result.content)
-            bearer_token = result_json['access_token']
-            self.log.info('bearer token: %s' % bearer_token)
-            return bearer_token
-        else:
-            self.log.warn('can not auth :(')
-            return None
+    def __get_client_params(self, use_proxy):
+        client_params = properties.get_ttr_credentials(self.credential_number)
+        if use_proxy:
+            client_params['proxies'] = self.proxy_handler.get_next()
+        return client_params
 
+    def __get_request_name(self, function):
+        return function.im_self._path
 
-    def get(self, command, dump_to=None, **kwargs):
-        """
-        :param command: - the command for twitter api rest
-        :param dump_to:  - some object which have .write() method
-        :param kwargs:  - command parameters
-        :return: - python object of result twitter api or None
-        :raise: APIOutException with errors description
-        """
-        headers = {'Authorization': 'Bearer %s' % self.bearer_token}
-        result = requests.get('%s/1.1/%s.json' % (self.basic_url, command), headers=headers, params=kwargs)
-        try:
-            result = json.loads(result.content)
-            if dump_to:
-                json.dump(result, dump_to)
-            if hasattr(result, 'errors'):
-                raise APIRequestOverflowException('%s' % result['errors'])
-            return result
-        except ValueError as e:
-            self.log.error('result have not contain json object')
-            self.log.exception(e)
-
-    def _get_all(self, command, **kwargs):
-        all = []
-        page = 1
-        kwargs['page'] = page
-        while True:
-            try:
-                result = self.get(command, **kwargs)
-                if len(result):
-                    kwargs['page'] += 1
-                    all.extend(result)
-                else:
-                    break
-            except APIRequestOverflowException as e:
-                break
-        return all
-
-    def _get_cursored(self, cursored_first_result, list_name, command, **kwargs):
-        """
-        input cursored result
-        :return: full result
-        """
-        full_list = cursored_first_result[list_name]
-        cursor = cursored_first_result['next_cursor']
-        self.log.debug('\ngetting cursored results:')
-        iter_count = 0
-        while True:
-            if cursor == 0 or iter_count == cursor_iterations:
-                break
-            iter_count += 1
-            cursor = cursored_first_result['next_cursor']
-            kwargs['cursor'] = cursor
-
-            try:
-                batch_result = self.get(command, **kwargs)
-            except APIRequestOverflowException as e:
-                self.log.exception(e)
-                self.log.warn('for this request i retrieve only %s %s' % (len(full_list), list_name))
-                return cursored_first_result
-
-            if batch_result and 'next_cursor' in batch_result and list_name in batch_result:
-                full_list.extend(batch_result[list_name])
-                cursor = batch_result['next_cursor']
-            else:
-                break
-        self.log.info('full list count is %s %s' % (len(full_list), list_name))
-        full_result = cursored_first_result
-        full_result[list_name] = full_list
-        return full_result
-
-
-    def get_user(self, user_id=None, screen_name=None):
-        """
-        return user representation
-        :param user_id:
-        :param screen_name:
-        :return:
-            user information: [
-            'id',
-            'verified',
-            'followers_count',
-            'statuses_count',
-            'description',
-            'friends_count',
-            'screen_name',
-            'lang',
-            'favourites_count',
-            'name',
-            'created_at [dt]',
-            'contributors_enabled',
-            'protected',
-            'default_profile',
-            'status - created_at',
-            'status - text',
-            ]
-        """
-
-        kwargs = {'user_id': user_id, 'screen_name': screen_name}
-        command = "users/show"
-        result = self.get(command, **kwargs)
-        final_result = {}
-        if result and isinstance(result, dict):
-            for el in user_info:
-                if el == 'status':
-                    final_result[el + '_created_at'] = TTR_API.get_dt(result.get(el)['created_at'])
-                    final_result[el + '_text'] = result.get(el)['text']
-                elif el == 'created_at':
-                    final_result[el] = TTR_API.get_dt(result.get(el))
-                else:
-                    final_result[el] = result.get(el)
-        return final_result
-
-    def get_user_timeline(self, user_id=None, screen_name=None):
-        params = {'user_id': user_id, 'screen_name': screen_name, 'count': 200, 'include_rts': 1, 'trim_user': 1}
-        command = "statuses/user_timeline"
-        result = self._get_all(command, **params)
+    def __ensure_sn_id(self, sn_object):
+        result = dict(sn_object)
+        result['sn_id'] = result.pop(u'id')
         return result
 
-    def get_relations(self, user_id=None, screen_name=None, relation_type='friends'):
-        """
-        returning json object of user relations
-        :param user_id:
-        :param screen_name:
-        :param relation_type: can be followers or friends
-        :return:
-        """
-        kwargs = {'user_id': user_id, 'screen_name': screen_name, 'count': 5000, 'cursor': -1}
-        command = '%s/ids' % relation_type
+    def _form_new_client(self, credential_number, use_proxy=False):
+        self.credential_number = credential_number
+        self.client = UserClient(**self.__get_client_params(use_proxy))
+        return self.client
 
-        first_result = self.get(command, **kwargs)
-        full_result = self._get_cursored(first_result, 'ids', command, **kwargs)
-        return full_result[u'ids']
+    def __get_data(self, callback, **kwargs):
+        request_name = self.__get_request_name(callback)
+        use_proxy = False
+        while True:
+            try:
+                cred_number, wait_time = self.limit_handler.get_credentials_number(request_name)
+                callback.im_self._client = self._form_new_client(cred_number, use_proxy)
+                time.sleep(wait_time)
+                request_time = datetime.now()
+                response = callback(**kwargs)
+                return response
+            except TwitterApiError as e:
+                log.exception(e)
+                return None
+            except BirdyException as e:
+                log.info('problem with: %s and request name: %s' % (kwargs, request_name))
+                log.exception(e)
+                use_proxy = True
+            except Exception as e:
+                log.exception(e)
+            finally:
+                self.limit_handler.consider_credentials_number(request_name, cred_number, request_time)
 
-    def search(self, q):
-        params = {'count': 100, 'q': q}
-        command = 'search/tweets'
-        tweet_result = self.get(command, **params).get('statuses')
-        return tweet_result
+    def get_all_relations(self, user, relation_type='friends', from_cursor=-1):
+        cursor = from_cursor
+        while True:
+            response = self.__get_data(self.client.api[relation_type].ids.get,
+                                       screen_name=user['screen_name'],
+                                       count=200,
+                                       cursor=cursor)
+            if response:
+                cursor = response.data.next_cursor
+                yield response.data.ids, cursor
+                if not cursor:
+                    break
+            else:
+                break
+
+    def get_user(self, **kwargs):
+        response = self.__get_data(self.client.api.users.show.get, **kwargs)
+        if response:
+            return self.__ensure_sn_id(response.data)
+        else:
+            return None
+
+    def get_all_timeline(self, user, max_id=None):
+        max_id = max_id
+        while True:
+            response = self.__get_data(self.client.api.statuses.user_timeline.get,
+                                       screen_name=user['screen_name'],
+                                       count=200,
+                                       trim_user=True,
+                                       include_rts=True,
+                                       max_id=max_id)
+            if response:
+                if max_id:
+                    yield [self.__ensure_sn_id(el) for el in response.data[1:]], max_id
+                else:
+                    yield [self.__ensure_sn_id(el) for el in response.data], max_id
+                if len(response.data) != 200:
+                    break
+                else:
+                    max_id = response.data[-1][u'id']
+            else:
+                break
+
+    def search(self, q, until=None, result_type='recent', lang='ru', geocode=None, max_id=None, count_iterations=10):
+        max_id = max_id
+        iteration = 0
+        while iteration <= count_iterations:
+            iteration+=1
+            params = {'q': q,
+                      'result_type': result_type,
+                      'lang': lang,
+                      'count': 100,
+                      'include_entities':True
+            }
+            if geocode:
+                params['geocode'] = geocode
+            if until and isinstance(until, datetime):
+                params['until'] = until.strftime("%Y-%m-%d")
+            if max_id:
+                params['max_id'] = max_id
+            response = self.__get_data(self.client.api.search.tweets.get, **params)
+            if response:
+                max_id = response.data.statuses[-1][u'id']
+                yield response.data.statuses, max_id
+                if len(response.data.statuses) < 99:
+                    break
+            else:
+                break
+
+
+if __name__ == '__main__':
+    api = TTR_API()
+    db = db_handler()
+    medvedev = api.get_user(screen_name='medvedevRussia')
+    duty = db.get_duty({'work': 'medvedev_get_follwers'})
+    if duty:
+        cursor = duty['cursor']
+    else:
+        cursor = -1
+        #friends_mdv = api.get_all_relations(medvedev, from_cursor=cursor)
+
+    followers_mdv = api.get_all_relations(medvedev, relation_type='followers')
+
+    def found_user(user_ids, api, db):
+        for user_ids_batch, cursor in user_ids:
+            for user_id in user_ids_batch:
+                user = api.get_user(user_id=str(user_id))
+                if user:
+                    db.save_user(user)
+            db.save_duty({'work': 'medvedev_get_followers', 'cursor': cursor}, 'medvedev_get_followers')
+
+
+    t_follwers = threading.Thread(target=found_user, kwargs={'user_ids': followers_mdv, 'api': api, 'db': db})
+    t_follwers.start()
+    t_follwers.join()
