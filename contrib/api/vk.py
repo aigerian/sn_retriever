@@ -20,7 +20,7 @@ class VK_API(API):
         self.array_item_process = lambda x: x[1:]
         self.array_count_process = lambda x: x[0]
 
-
+    #TODO some exception!
     def __auth(self):
         """
         authenticate in vk with dirty hacks
@@ -164,3 +164,7 @@ class VK_API(API):
         kwargs = {'extended': 1, 'q': q, 'count': 1000}
         result = self.get(command, **kwargs)
         return result[1:]
+
+if __name__ == '__main__':
+    vk = VK_API()
+    vk.get_user(user_id=123)

@@ -1,4 +1,5 @@
 #coding: utf-8
+from datetime import datetime
 from contrib.db import DataBase
 
 __author__ = '4ikist'
@@ -52,8 +53,15 @@ class db_handler(DataBase):
         users = self.users.find()
         return [el for el in users]
 
-    def get_user(self, user_id):
-        user = self.users.find_one({'_id': user_id})
+    def get_user(self, _id=None, sn_id=None):
+        request_params = {}
+        if _id:
+            request_params['_id'] = _id
+        elif sn_id:
+            request_params['sn_id'] = sn_id
+        else:
+            return None
+        user = self.users.find_one(request_params)
         return user
 
     def save_message(self, message):
@@ -63,8 +71,10 @@ class db_handler(DataBase):
         return result
 
     def save_user(self, user):
+        user['update_date'] = datetime.now()
         result = self._save_or_update_object(self.users, user['sn_id'], user)
         return result
+
 
     def save_social_object(self, s_object):
         log.info('saving social object \n%s' % s_object)

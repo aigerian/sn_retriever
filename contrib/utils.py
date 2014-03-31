@@ -32,8 +32,4 @@ def process_message(message, n=1, ttr_tooltip=None):
         else:
             result.append({'content': token, 'type': 'word'})
 
-    # final_result = []
-    # for i in xrange(len(result) - n):
-    #     final_result.append(tuple(result[i:i + n]))
-    # return final_result
     return result
