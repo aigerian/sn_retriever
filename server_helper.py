@@ -39,9 +39,8 @@ def process_ttr_search_result(ttr):
                               'posts_count': user.get('statuses_count'),
                               'utc_offset': user.get('utc_offset'),
             }
-            user_id = db.save_user(retrieved_user)
+            user_ref = db.save_user(retrieved_user)
             count_users += 1
-            user_ref = DBRef(db.users.name, user_id)
 
         db.save_message({'text': el.get('text'),
                          'sn_id': el.get('id'),
