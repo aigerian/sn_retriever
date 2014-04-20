@@ -1,6 +1,7 @@
 #coding: utf-8
 from datetime import datetime
 from bson import DBRef
+from contrib.api.entities import APIUser, APIMessage
 from contrib.db import DataBase
 
 __author__ = '4ikist'
@@ -85,7 +86,7 @@ class db_handler(DataBase):
 
     def get_users(self, parameter=None):
         users = self.users.find(parameter)
-        return [el for el in users]
+        return [APIUser(el, from_db=True) for el in users]
 
     def get_user(self, _id=None, sn_id=None, screen_name=None, use_as_cache=False):
         """
@@ -99,16 +100,20 @@ class db_handler(DataBase):
         elif sn_id:
             request_params['sn_id'] = sn_id
         elif screen_name:
-            request_params['screen_name'] = screen_name
+            request_params['screen_name'] = screen_name[1:] if '@' == screen_name[0] else screen_name
         else:
             return None
         user = self.users.find_one(request_params)
         if use_as_cache and user and (datetime.now() - user.get('update_date')).seconds > user_cache_time:
             return None
-        return user
+        if user:
+            return APIUser(user, from_db=True)
 
-    def save_user(self, user):
-        result = self._save_or_update_object(self.users, user['sn_id'], user)
+    def save_user(self, user, update=True):
+        if update:
+            result = self._save_or_update_object(self.users, user['sn_id'], user)
+        else:
+            result = self.users.save(user)
         self.not_loaded_users.remove({'user_ref': DBRef(self.users.name, result)})
         return result
 
@@ -117,21 +122,22 @@ class db_handler(DataBase):
         messages = map(lambda x: x['obj'], filter(lambda x: x['score'] >= score_more_than, result['results']))
         return messages
 
-    def get_messages(self, parameter=None):
-        result = self.messages.find(parameter).sort('time', -1)
-        result = [el for el in result]
+    def get_messages(self, parameter):
+        result = self.messages.find(parameter).sort('created_at', -1)
+        result = [APIMessage(el, from_db=True) for el in result]
         return result
 
     def get_message_last(self, user):
-        result = list(self.messages.find({'user.$id': user.get('_id')}).sort('created_at',-1).limit(1))
+        result = list(self.messages.find({'user.$id': user.get('_id')}).sort('created_at', -1).limit(1))
         if len(result):
-            return result[0]
+            return APIMessage(result[0], from_db=True)
 
     def get_message(self, sn_id, use_as_cache=False):
         message = self.messages.find_one({'sn_id': sn_id})
         if use_as_cache and message and (datetime.now() - message.get('update_date')).seconds > message_cache_time:
             return None
-        return message
+        if message:
+            return APIMessage(message, from_db=True)
 
     def save_message(self, message):
         """
@@ -246,9 +252,8 @@ class db_handler(DataBase):
 
 if __name__ == '__main__':
     db = db_handler()
-    user_id = db.save_user({'sn_id': 123, 'another_data': 'test'})
-    db.save_message({'sn_id': 123, 'user': {'sn_id': 123}, 'text': 'some text'})
-    user_messages = db.get_messages({'user': db.get_user_ref({'_id': user_id})})
-    print user_messages
-
+    user = db.get_user(screen_name='linoleum2k12')
+    messages = db.get_messages({'user.$id': user.get("_id")})
+    for el in messages:
+        print el.get('sn_id'), el.get('text')
 

@@ -1,9 +1,7 @@
-import functools
-import time
+from datetime import datetime
 import logging
 from contrib.api.proxy import ProxyHandler
 
-import properties
 from requests import Session, ConnectionError
 
 
@@ -48,7 +46,7 @@ class ProxySession(Session):
             else:
                 return result
 
-
+#TODO refactor!
 class API(object):
     def __auth(self):
         pass
@@ -62,9 +60,70 @@ class API(object):
     def search(self, q):
         pass
 
+
 class APIRequestOverflowException(Exception):
     pass
 
 
 class APIException(Exception):
     pass
+
+
+class APISocialObject(dict):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        data = dict(data_dict)
+        if not from_db:
+            data['sn_id'] = data.pop('id')
+            data['created_at'] = datetime.strptime(data['created_at'],
+                                                   created_at_format if created_at_format else '%a %b %d %H:%M:%S +0000 %Y')
+        super(APISocialObject, self).__init__(data)
+
+    def __hash__(self):
+        return self.get('sn_id')
+
+
+class APIUser(APISocialObject):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        super(APIUser, self).__init__(data_dict, created_at_format, from_db)
+
+    @property
+    def name(self):
+        return self.get('name')
+
+    @property
+    def screen_name(self):
+        return self.get('screen_name')
+
+    @property
+    def sn_id(self):
+        return self.get('sn_id')
+
+    @property
+    def messages_count(self):
+        return self.get('statuses_count')
+
+    @property
+    def friends_count(self):
+        return self.get('friends_count')
+
+    @property
+    def followers_count(self):
+        return self.get('followers_count')
+
+
+class APIMessage(APISocialObject):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        data = dict(data_dict)
+        if not from_db:
+            retweet = data.get('retweeted_status')
+            if retweet:
+                retweet = dict(retweet)
+                rt_user = dict(retweet.get('user'))
+                rt_user = {'sn_id': rt_user.get('id')}
+                retweet['user'] = rt_user
+                data['retweeted_status'] = retweet
+            user = {'sn_id': data['user']['id']}
+            data['user'] = user
+        super(APIMessage, self).__init__(data, created_at_format, from_db)
+
+

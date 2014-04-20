@@ -1,4 +1,5 @@
 from collections import Counter
+from contrib.api.entities import APIUser
 from contrib.api.ttr import TTR_API
 from contrib.core.tracking import TTR_Tracking
 from contrib.db.mongo_db_connector import db_handler
@@ -134,40 +135,58 @@ class BaseCharacteristics(object):
         raise NotImplementedError
 
 
+def remove_dog(name):
+    return name if '@' != name[0] else name[1:]
+
+
 def get_params_for_api(user):
     params = {}
     if isinstance(user, str):
-        params['screen_name'] = user if '@' != user[0] else user[1:]
+        params['screen_name'] = remove_dog(user)
         return params
+    if isinstance(user, APIUser):
+        return user
     if 'sn_id' in user:
         params['user_id'] = user.get('sn_id')
     if 'screen_name' in user:
         params['screen_name'] = user.get('screen_name')
+
     return params
 
 
 class TTR_Characterisitcs(BaseCharacteristics):
-    def __init__(self, api, database):
+    def __init__(self, database, api):
         self.database = database
         self.api = api
-        self.tracker = TTR_Tracking(api, database)
+        if self.api:
+            self.tracker = TTR_Tracking(api, database)
 
     def __get_user(self, user_params):
+        if isinstance(user_params, APIUser):
+            if not user_params.get('_id'):
+                saved_user = self.database.get_user(sn_id=user_params.get('sn_id'))
+                if not saved_user:
+                    saved_user['_id'] = self.database.save_user(user_params, update=False)
+                return saved_user
+            else:
+                return user_params
         user_params['use_as_cache'] = True
         user = self.database.get_user(**user_params)
         if not user:
-            user_params.pop('use_as_cache')
-            user = self.api.get_user(**user_params)
-            user['_id'] = self.database.save_user(user)
+            if self.api:
+                user_params.pop('use_as_cache')
+                user = self.api.get_user(**user_params)
+                user['_id'] = self.database.save_user(user, update=False)
         return user
 
     def __get_message(self, message_id):
         message = self.database.get_message(message_id, use_as_cache=True)
         if not message:
-            message, user = self.api.get_message(message_id)
-            user_ref = self.database.get_user_ref({'_id': self.database.save_user(user)})
-            message['user'] = user_ref
-            self.database.save_message(message)
+            if self.api:
+                message, user = self.api.get_message(message_id)
+                user_ref = self.database.get_user_ref({'_id': self.database.save_user(user)})
+                message['user'] = user_ref
+                self.database.save_message(message)
         return message
 
     def __get_user_messages(self, user, params=None):
@@ -175,29 +194,27 @@ class TTR_Characterisitcs(BaseCharacteristics):
         db_user = self.__get_user(user_params)
         db_user_ref = self.database.get_user_ref(db_user)
         last_message = self.database.get_message_last(db_user)
-        if last_message:
-            result_from_api = self.api.get_all_timeline(since_id=last_message.get('sn_id'), user=user_params)
-        else:
-            result_from_api = self.api.get_all_timeline(user=user_params)
-        new_messages = []
-        for el in result_from_api:
-            el['user'] = db_user_ref
-            self.database.save_message(el)
-            new_messages.append(el)
+        if self.api:
+            result_from_api = self.api.get_all_timeline(since_id=last_message.get('sn_id') if last_message else None,
+                                                        user=user_params)
+            for el in result_from_api:
+                el['user'] = db_user_ref
+                self.database.save_message(el)
         messages = self.database.get_messages(dict({'user': db_user_ref}, **params if params else {}))
         return list(messages)
 
     def __get_actual_relations(self, user, relations_type='friends'):
         user_params = get_params_for_api(user)
-        api_user = self.api.get_user(**user_params)
-        real_count = api_user.get('%s_count' % relations_type)
         saved_user = self.database.get_user(**user_params)
-        saved_count = saved_user.get('%s_count' % relations_type)
-        delta = real_count - saved_count
-        new, removed, _ = self.tracker.get_relations_diff(saved_user, delta)
-        new_users = self.api.get_users(new)
-        for el in new_users:
-            self.database.save_user(el)
+        if self.api:
+            api_user = self.api.get_user(**user_params)
+            real_count = api_user.get('%s_count' % relations_type)
+            saved_count = saved_user.get('%s_count' % relations_type)
+            delta = real_count - saved_count
+            new, removed, _ = self.tracker.get_relations_diff(saved_user, delta)
+            new_users = self.api.get_users(new)
+            for el in new_users:
+                self.database.save_user(el, update=False)
         friends = self.database.get_relations(from_id=saved_user.get('_id'), relation_type=relations_type)
         return friends
 
@@ -207,7 +224,9 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
     def hashtags(self, user):
         hashtags = []
-        messages = self.__get_user_messages(user)
+        messages = self.__get_user_messages(user,
+                                            params={'entities.hashtags': {'$not': {'$size': 0}}}
+        )
         for el in messages:
             for ht in el.get('entities').get('hashtags'):
                 hashtags.append(ht.get('text'))
@@ -215,27 +234,44 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
     def urls(self, user):
         urls = []
-        messages = self.__get_user_messages(user)
+        messages = self.__get_user_messages(user,
+                                            params={'entities.urls': {'$not': {'$size': 0}}}
+        )
         for el in messages:
             for url in el.get('entities').get('urls'):
-                urls.append(url.get('extended_url'))
+                urls.append(url.get('expanded_url'))
         return Counter(urls)
 
+    def __get_users(self, user_names_list):
+        result = []
+        not_in_db_users = []
+        for user_name in user_names_list:
+            user = self.database.get_user(screen_name=user_name)
+            if not user:
+                not_in_db_users.append(user_name)
+            else:
+                result.append(user)
+        if self.api:
+            retrieved = self.api.get_users(screen_names=not_in_db_users)
+            for user in retrieved:
+                user['_id'] = self.database.save_user(user, update=False)
+                result.append(user)
+        return result
+
     def mentions(self, user, only_names=False):
-        messages = self.__get_user_messages(user)
+        messages = self.__get_user_messages(user,
+                                            params={'entities.user_mentions': {'$not': {'$size': 0}}}
+        )
         mentions = []
-        screen_names = set()
         for el in messages:
             for mention in el.get('entities').get('user_mentions'):
                 mention_screen_name = mention.get('screen_name')
-                if not only_names:
-                    if mention_screen_name not in screen_names:
-                        user_mention = self.__get_user(get_params_for_api(mention_screen_name))
-                        mentions.append(user_mention)
-                        screen_names.add(mention_screen_name)
-                else:
-                    mentions.append(mention_screen_name)
-        return Counter(mentions)
+                mentions.append(mention_screen_name)
+        result = Counter(mentions)
+        if not only_names:
+            loaded_users = self.__get_users(result.keys())
+            return Counter({el: result.get(el.sn_id) for el in loaded_users})
+        return result
 
     def real_name(self, user):
         user = self.__get_user(get_params_for_api(user))
@@ -279,66 +315,77 @@ class TTR_Characterisitcs(BaseCharacteristics):
         return result
 
     def count_urls(self, who, url):
-        messages = self.__get_user_messages(who)
+        messages = self.__get_user_messages(who, params={'entities.urls': {'$not': {'$size': 0}}}
+        )
         count = 0
         for message in messages:
-            urls = message.get('entites').get('urls')
+            urls = message.get('entities').get('urls')
             for saved_url in urls:
                 if url in (saved_url.get('url'), saved_url.get('expanded_url'), saved_url.get('display_url')):
                     count += 1
         return count
 
     def count_hashtags(self, who, hashtag):
-        if hashtag[0] == '#':
-            search_ht = hashtag[1:]
-        else:
-            search_ht = hashtag[:]
+        search_ht = hashtag if '#' != hashtag[0] else hashtag[1:]
         ht = self.hashtags(who)
         return ht.get(search_ht, 0)
 
     def count_mentions(self, who, mentioned):
         mentions = self.mentions(who, True)
-        return mentions.get(mentioned, 0)
+        if isinstance(mentioned, str):
+            mentioned_name = remove_dog(mentioned)
+        elif isinstance(mentioned, dict):
+            mentioned_name = mentioned.get('screen_name')
+        else:
+            return 0
+        return mentions.get(mentioned_name, 0)
 
     def count_reposts(self, who, whose):
-        user = self.__get_user(who)
-        user_producer = self.__get_user(whose)
-        intersted_messages = self.__get_user_messages(user=user,
-                                                      params={
-                                                          'in_reply_to_screen_name': user_producer.get('screen_name'),
-                                                          'in_reply_to_user_id': user_producer.get('sn_id')})
-        return len(intersted_messages)
+        user = self.__get_user(get_params_for_api(who))
+        user_producer = self.__get_user(get_params_for_api(whose))
+        if user and user_producer:
+            intersted_messages = self.__get_user_messages(user=user,
+                                                          params={
+                                                              'retweeted_status': {'$exists': True},
+                                                              'retweeted_status.user.sn_id': user_producer.sn_id})
+            return len(intersted_messages)
+        else:
+            return 0
 
 
 if __name__ == '__main__':
     api = TTR_API()
     db = db_handler()
-    ch = TTR_Characterisitcs(api, db)
-    tl_length = ch.timeline_length('@linoleum2k12')
+    ch = TTR_Characterisitcs(db, api)
+    user = api.get_user(screen_name='@linoleum2k12')
+    if not user:
+        user = db.get_user(screen_name='@linoleum2k12')
+    tl_length = ch.timeline_length(user)
     assert tl_length == 80
-    ht = ch.hashtags('@linoleum2k12')
-    real_name = ch.real_name('@linoleum2k12')
-    friends_count = ch.friends_count('@linoleum2k12')
+    ht = ch.hashtags(user)
+    real_name = ch.real_name(user)
+    friends_count = ch.friends_count(user)
     assert friends_count == 7
-    followers_count = ch.followers_count('@linoleum2k12')
+    followers_count = ch.followers_count(user)
     assert followers_count == 11
-    urls = ch.urls('@linoleum2k12')
-    dt_init = ch.dt_init('@linoleum2k12')
-    mentions_users = ch.mentions('@linoleum2k12', only_names=False)
-    mentions_names = ch.mentions('@linoleum2k12', only_names=True)
+    urls = ch.urls(user)
+    dt_init = ch.dt_init(user)
+    mentions_users = ch.mentions(user, only_names=False)
+    mentions_names = ch.mentions(user, only_names=True)
 
-    api_tl = api.get_all_timeline({'screen_name': '@linoleum2k12'})
-    some_message = api_tl.next()
+    # api_tl = api.get_all_timeline(user)
+    # some_message = api_tl.next()
+    some_message = db.messages.find_one({'retweeted_status': {'$exists': True}})
     rt_count = ch.reposts_count(some_message.get('sn_id'))
 
-    ht_count = ch.count_hashtags('@linoleum2k12', '#test')
+    ht_count = ch.count_hashtags(user, '#test')
     assert ht_count == 1
 
-    url_count = ch.count_urls('@linoleum2k12', 'railstutorial.org')
+    url_count = ch.count_urls(user, 'railstutorial.org')
     assert url_count == 1
 
     ment_count = ch.count_mentions('@linoleum2k12', '@lutakisel4ikova')
-    assert ment_count == 2
+    assert ment_count == 3
 
     friends = ch.friends('@linoleum2k12')
     for el in friends:
@@ -347,3 +394,5 @@ if __name__ == '__main__':
     followers = ch.followers('@linoleum2k12')
     for el in followers:
         print el
+
+    cr = ch.count_reposts('@linoleum2k12', '@lutakisel4ikova')

@@ -6,5 +6,5 @@ pika
 requests
 facebook-sdk
 lxml
-py2neo
 neo4jrestclient
+pymongo=2.7
