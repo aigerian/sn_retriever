@@ -4,12 +4,12 @@ __author__ = '4ikist'
 from flask import Flask, render_template, jsonify, request
 
 from contrib.queue import QueueServer
-from contrib.db.mongo_db_connector import db_handler
+from contrib.db.database_engine import Persistent
 import server_helper
 
 
 app = Flask(__name__, static_folder='static', static_url_path='')
-db = db_handler()
+db = Persistent()
 queue = QueueServer()
 
 log = logging.getLogger('flask_server')

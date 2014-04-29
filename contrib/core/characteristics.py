@@ -2,7 +2,7 @@ from collections import Counter
 from contrib.api.entities import APIUser
 from contrib.api.ttr import TTR_API
 from contrib.core.tracking import TTR_Tracking
-from contrib.db.mongo_db_connector import db_handler
+from contrib.db.database_engine import Persistent
 
 __author__ = '4ikist'
 
@@ -75,7 +75,7 @@ class BaseCharacteristics(object):
 
     def mentions(self, user, only_names=False):
         """
-        return generator of users which input user was mentioned
+        return Counter of users which input user was mentioned
         :param user:
         :param only_names: if true - returning generator with only names
         :return:
@@ -211,12 +211,12 @@ class TTR_Characterisitcs(BaseCharacteristics):
             real_count = api_user.get('%s_count' % relations_type)
             saved_count = saved_user.get('%s_count' % relations_type)
             delta = real_count - saved_count
-            new, removed, _ = self.tracker.get_relations_diff(saved_user, delta)
+            new, removed, _ = self.tracker.get_relations_diff(saved_user, delta, relations_type=relations_type)
             new_users = self.api.get_users(new)
             for el in new_users:
-                self.database.save_user(el, update=False)
-        friends = self.database.get_relations(from_id=saved_user.get('_id'), relation_type=relations_type)
-        return friends
+                self.database.save_user(el)
+        related_users = self.database.get_related_users(from_id=saved_user.get('_id'), relation_type=relations_type)
+        return related_users
 
     def timeline_length(self, user):
         user = self.__get_user(get_params_for_api(user))
@@ -352,10 +352,57 @@ class TTR_Characterisitcs(BaseCharacteristics):
         else:
             return 0
 
+    def __get_relations(self, user, rel_type, is_to_user=False):
+        if not is_to_user:
+            related_users = self.__get_actual_relations(user, rel_type)
+        else:
+            related_users = self.database.get_related_users(to_id=user.get('_id'))
+        return related_users
+
+
+    def get_nearest_users(self, user, depth=3, from_rels=True, to_rels=True, rel_type='friends'):
+        """
+        return user's nearest user in range of depth param by relations with type == rel_type
+        if from_rels - all users like [user - [rel_type] - > subject]
+        if to_rels - all users like [subject - [rel_type] -> user]
+        return {subject:depth}
+        """
+
+        def get_nearest(interested_user):
+            nearest = set()
+            if from_rels:
+                nearest.update(self.__get_relations(interested_user, rel_type))
+            if to_rels:
+                nearest.update(self.__get_relations(interested_user, rel_type, True))
+            return nearest
+
+        def update_result_map(result_map, new_nearest, depth):
+            for el in new_nearest:
+                if el == user:
+                    continue
+                if not result_map.has_key(el):
+                    result_map[el] = depth
+
+        result_map = {}
+        current_incidents = set()
+        for i in range(1, depth + 1):
+            if not len(current_incidents):
+                nearest = get_nearest(user)
+                current_incidents.update(nearest)
+                update_result_map(result_map, nearest, i)
+            else:
+                new_current_incidents = set()
+                for el in current_incidents:
+                    nearest = get_nearest(el)
+                    new_current_incidents.update(nearest)
+                    update_result_map(result_map, nearest, i)
+                current_incidents = new_current_incidents
+        return result_map
+
 
 if __name__ == '__main__':
     api = TTR_API()
-    db = db_handler()
+    db = Persistent()
     ch = TTR_Characterisitcs(db, api)
     user = api.get_user(screen_name='@linoleum2k12')
     if not user:

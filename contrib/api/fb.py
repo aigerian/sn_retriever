@@ -1,4 +1,4 @@
-from contrib.db.mongo_db_connector import db_handler
+from contrib.db.database_engine import Persistent
 
 __author__ = '4ikist'
 
@@ -32,7 +32,7 @@ class FB_API(API):
         self.user_relations_group_fields = ["groups", "events", "likes"]
 
         try:
-            self.db_data = db_handler().create_temp_collection('fb')
+            self.db_data = Persistent().create_temp_collection('fb')
         except Exception as e:
             self.log.warn(e)
 

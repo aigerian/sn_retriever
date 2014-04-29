@@ -133,7 +133,7 @@ def test_user_loads(ttr):
         else:
             depth += 1
         n_user = neo.save_user(user)
-        user1_friends_ids = ttr.get_relations(user_id=user.get(u'id'), relation_type='friends')
+        user1_friends_ids = ttr.get_related_users(user_id=user.get(u'id'), relation_type='friends')
         for el in user1_friends_ids[0:10 if len(user1_friends_ids) > 10 else len(user1_friends_ids)]:
             user_friend = ttr.get_user(user_id=el)
             n_user_friend = neo.save_user(user_friend)

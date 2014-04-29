@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 
-from contrib.db.mongo_db_connector import queue_handler
+from contrib.db.database_engine import queue_handler
 import properties
 
 log = logging.getLogger('server')

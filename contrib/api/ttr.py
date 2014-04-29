@@ -214,80 +214,79 @@ class TTR_API(object):
         return result
 
 
-def get_message(self, message_id):
-    """
-    :param message_id: id of message in ttr
-    :return: message and user
-    """
-    params = {'id': message_id, 'trim_user': False, 'include_entities': True, 'include_my_retweet': False}
-    response = self.__get_data(self.client.api.statuses.show.get, **params)
-    user = response.data.user
-    if response.data:
-        return self._form_message(response.data), self._form_user(user)
+    def get_message(self, message_id):
+        """
+        :param message_id: id of message in ttr
+        :return: message and user
+        """
+        params = {'id': message_id, 'trim_user': False, 'include_entities': True, 'include_my_retweet': False}
+        response = self.__get_data(self.client.api.statuses.show.get, **params)
+        user = response.data.user
+        if response.data:
+            return self._form_message(response.data), self._form_user(user)
 
 
-def get_all_timeline(self, user, max_id=None, since_id=None):
-    """
-    return generator of batches of user timeline and max id
-    :param user: user which timeline you want to retrieve (some)
-    :param max_id: timeline before this id
-    :param since_id: timeline after this id
-    :return: generator of tweets
-    """
-    max_id = max_id
-    while True:
-        response = self.__get_data(self.client.api.statuses.user_timeline.get,
-                                   screen_name=user['screen_name'],
-                                   count=200,
-                                   trim_user=True,
-                                   include_rts=True,
-                                   max_id=max_id,
-                                   since_id=since_id)
-        if response:
-            for el in response.data:
-                yield self._form_message(el)
+    def get_all_timeline(self, user, max_id=None, since_id=None):
+        """
+        return generator of batches of user timeline and max id
+        :param user: user which timeline you want to retrieve (some)
+        :param max_id: timeline before this id
+        :param since_id: timeline after this id
+        :return: generator of tweets
+        """
+        max_id = max_id
+        while True:
+            response = self.__get_data(self.client.api.statuses.user_timeline.get,
+                                       screen_name=user['screen_name'],
+                                       count=200,
+                                       trim_user=True,
+                                       include_rts=True,
+                                       max_id=max_id,
+                                       since_id=since_id)
+            if response:
+                for el in response.data:
+                    yield self._form_message(el)
 
-            if len(response.data) != 200:
-                break
+                if len(response.data) != 200:
+                    break
+                else:
+                    max_id = response.data[-1][u'id']
             else:
-                max_id = response.data[-1][u'id']
-        else:
-            break
-
-
-def search(self, q, until=None, result_type='recent', lang='ru', geocode=None, max_id=None, count_iterations=10):
-    iteration = 0
-    while iteration <= count_iterations:
-        iteration += 1
-        params = {'q': q,
-                  'result_type': result_type,
-                  'lang': lang,
-                  'count': 100,
-                  'include_entities': True
-        }
-        if geocode:
-            params['geocode'] = geocode
-        if until and isinstance(until, datetime):
-            params['until'] = until.strftime("%Y-%m-%d")
-        if max_id:
-            params['max_id'] = max_id
-        response = self.__get_data(self.client.api.search.tweets.get, **params)
-        if response and len(response.data.statuses):
-            max_id = response.data.statuses[-1][u'id']
-            for el in response.data.statuses:
-                yield self.__ensure_message_params(el)
-            if len(response.data.statuses) < 99:
                 break
-        else:
-            break
+
+    def search(self, q, until=None, result_type='recent', lang='ru', geocode=None, max_id=None, count_iterations=10):
+        iteration = 0
+        while iteration <= count_iterations:
+            iteration += 1
+            params = {'q': q,
+                      'result_type': result_type,
+                      'lang': lang,
+                      'count': 100,
+                      'include_entities': True
+            }
+            if geocode:
+                params['geocode'] = geocode
+            if until and isinstance(until, datetime):
+                params['until'] = until.strftime("%Y-%m-%d")
+            if max_id:
+                params['max_id'] = max_id
+            response = self.__get_data(self.client.api.search.tweets.get, **params)
+            if response and len(response.data.statuses):
+                max_id = response.data.statuses[-1][u'id']
+                for el in response.data.statuses:
+                    yield self.__ensure_message_params(el)
+                if len(response.data.statuses) < 99:
+                    break
+            else:
+                break
 
 
-def get_retweets(self, tweet_id):
-    params = {'id': tweet_id, 'trim_user': True, 'include_entities': True, 'count': 100}
-    response = self.__get_data(self.client.api.statuses.retweets.get, **params)
-    retweets = response.data
-    for el in retweets:
-        yield self.__ensure_message_params(el)
+    def get_retweets(self, tweet_id):
+        params = {'id': tweet_id, 'trim_user': True, 'include_entities': True, 'count': 100}
+        response = self.__get_data(self.client.api.statuses.retweets.get, **params)
+        retweets = response.data
+        for el in retweets:
+            yield self.__ensure_message_params(el)
 
 
 if __name__ == '__main__':

@@ -1,13 +1,13 @@
 from datetime import datetime
 from bson import DBRef
 
-from contrib.db.mongo_db_connector import db_handler
+from contrib.db.database_engine import Persistent
 from contrib.queue import QueueServer
 
 
 __author__ = '4ikist'
 
-db = db_handler()
+db = Persistent()
 queue = QueueServer()
 
 
