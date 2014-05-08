@@ -1,6 +1,7 @@
 from collections import Counter
+from bson import ObjectId
 from contrib.api.entities import APIUser
-from contrib.api.ttr import TTR_API
+from contrib.api.ttr import __TTR_API
 from contrib.core.tracking import TTR_Tracking
 from contrib.db.database_engine import Persistent
 
@@ -154,6 +155,19 @@ def get_params_for_api(user):
     return params
 
 
+def get_params_for_db(user):
+    params = {}
+    if isinstance(user, str):
+        params['screen_name'] = user
+    elif isinstance(user, int):
+        params['sn_id'] = user
+    elif isinstance(user, ObjectId):
+        params['_id'] = str(user)
+    elif isinstance(user, APIUser):
+        return {'sn_id': user.get('sn_id')}
+    return params
+
+
 class TTR_Characterisitcs(BaseCharacteristics):
     def __init__(self, database, api):
         self.database = database
@@ -163,20 +177,22 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
     def __get_user(self, user_params):
         if isinstance(user_params, APIUser):
+            #check that user in db
             if not user_params.get('_id'):
                 saved_user = self.database.get_user(sn_id=user_params.get('sn_id'))
                 if not saved_user:
-                    saved_user['_id'] = self.database.save_user(user_params, update=False)
+                    self.database.save_user(user_params)
                 return saved_user
             else:
                 return user_params
+
         user_params['use_as_cache'] = True
         user = self.database.get_user(**user_params)
         if not user:
             if self.api:
                 user_params.pop('use_as_cache')
                 user = self.api.get_user(**user_params)
-                user['_id'] = self.database.save_user(user, update=False)
+                self.database.save_user(user)
         return user
 
     def __get_message(self, message_id):
@@ -204,18 +220,19 @@ class TTR_Characterisitcs(BaseCharacteristics):
         return list(messages)
 
     def __get_actual_relations(self, user, relations_type='friends'):
-        user_params = get_params_for_api(user)
+        user_params = get_params_for_db(user)
         saved_user = self.database.get_user(**user_params)
         if self.api:
-            api_user = self.api.get_user(**user_params)
+            user_api_params = get_params_for_api(user)
+            api_user = self.api.get_user(**user_api_params)
             real_count = api_user.get('%s_count' % relations_type)
-            saved_count = saved_user.get('%s_count' % relations_type)
+            saved_count = self.database.get_relations_count(api_user.get('sn_id'), relations_type)
             delta = real_count - saved_count
             new, removed, _ = self.tracker.get_relations_diff(saved_user, delta, relations_type=relations_type)
             new_users = self.api.get_users(new)
             for el in new_users:
                 self.database.save_user(el)
-        related_users = self.database.get_related_users(from_id=saved_user.get('_id'), relation_type=relations_type)
+        related_users = self.database.get_related_users(from_id=saved_user.get('sn_id'), relation_type=relations_type)
         return related_users
 
     def timeline_length(self, user):
@@ -254,7 +271,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
         if self.api:
             retrieved = self.api.get_users(screen_names=not_in_db_users)
             for user in retrieved:
-                user['_id'] = self.database.save_user(user, update=False)
+                self.database.save_user(user)
                 result.append(user)
         return result
 
@@ -270,7 +287,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
         result = Counter(mentions)
         if not only_names:
             loaded_users = self.__get_users(result.keys())
-            return Counter({el: result.get(el.sn_id) for el in loaded_users})
+            return Counter({el: result.get(el.screen_name) for el in loaded_users})
         return result
 
     def real_name(self, user):
@@ -352,15 +369,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
         else:
             return 0
 
-    def __get_relations(self, user, rel_type, is_to_user=False):
-        if not is_to_user:
-            related_users = self.__get_actual_relations(user, rel_type)
-        else:
-            related_users = self.database.get_related_users(to_id=user.get('_id'))
-        return related_users
-
-
-    def get_nearest_users(self, user, depth=3, from_rels=True, to_rels=True, rel_type='friends'):
+    def get_nearest_users(self, user, depth=3, rel_type='friends'):
         """
         return user's nearest user in range of depth param by relations with type == rel_type
         if from_rels - all users like [user - [rel_type] - > subject]
@@ -370,10 +379,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
         def get_nearest(interested_user):
             nearest = set()
-            if from_rels:
-                nearest.update(self.__get_relations(interested_user, rel_type))
-            if to_rels:
-                nearest.update(self.__get_relations(interested_user, rel_type, True))
+            nearest.update(self.__get_actual_relations(interested_user, rel_type))
             return nearest
 
         def update_result_map(result_map, new_nearest, depth):
@@ -401,7 +407,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
 
 if __name__ == '__main__':
-    api = TTR_API()
+    api = __TTR_API()
     db = Persistent()
     ch = TTR_Characterisitcs(db, api)
     user = api.get_user(screen_name='@linoleum2k12')

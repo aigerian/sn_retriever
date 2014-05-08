@@ -21,7 +21,7 @@ def ensure_new_db():
         if len(users) > 2:
             from_ = random.choice(users)
             to_ = __get_ne(from_, users)
-            db.save_relation(from_, to_, {'type': 'friends'})
+            db.save_relations(from_, to_, {'type': 'friends'})
 
     return db
 

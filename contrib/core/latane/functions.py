@@ -1,6 +1,9 @@
 # coding=utf-8
-from contrib.api.ttr import TTR_API
+import sys
+
+from contrib.api.ttr import __TTR_API, get_api
 from contrib.core.characteristics import TTR_Characterisitcs
+from contrib.core.social_net_graph import TTR_Graph
 from contrib.db.database_engine import Persistent, GraphPersistent
 
 __author__ = '4ikist'
@@ -10,9 +13,9 @@ beta = 2
 
 
 class LataneFunctions(object):
-    def __init__(self, characteristics, graph_persistence):
+    def __init__(self, characteristics, social_net_graph):
         self.characteristics = characteristics
-        self.graph_persistence = graph_persistence
+        self.social_net_graph = social_net_graph
 
     def execute(self, user, include_hash_tags=False, include_urls=False):
         """
@@ -40,10 +43,12 @@ class LataneFunctions(object):
                     continue
                 #выберим
                 val = max(mention_users.get(u_i), mention_users.get(u_j))
-                distance_friends = self.graph_persistence.get_path_length(u_i, u_j, 'friends', False)
-                distance_followers = self.graph_persistence.get_path_length(u_i, u_j, 'followers', False)
-                distance = max(distance_friends, distance_followers)
-                x += float(val) / pow(distance if distance is not None else 1, alpha)
+                distance_from = self.social_net_graph.shortest_path_length(u_i, u_j)
+                distance_to = self.social_net_graph.shortest_path_length(u_j, u_i)
+
+                distance = max(distance_to, distance_from) or sys.maxint
+
+                x += float(val) / pow(distance, alpha)
 
         result = -beta * sum(mention_users.values()) - x \
                  - evaluate_additional_force(self.characteristics.hashtags) if include_hash_tags else 0 \
@@ -54,8 +59,10 @@ class LataneFunctions(object):
 
 
 if __name__ == '__main__':
-    characteristics = TTR_Characterisitcs(Persistent(), TTR_API())
-    graph_persistence = GraphPersistent()
-    latane = LataneFunctions(characteristics,graph_persistence)
+    api = get_api()
+    persistent = Persistent()
+    characteristics = TTR_Characterisitcs(persistent,api)
+    social_net_graph = TTR_Graph()
+    latane = LataneFunctions(Persistent(), get_api())
 
         

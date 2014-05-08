@@ -1,8 +1,8 @@
-from contrib.api.ttr import TTR_API
+from contrib.api.ttr import __TTR_API
 
 __author__ = '4ikist'
 
-api = TTR_API()
+api = __TTR_API()
 right_users = []
 right_users.append(api.get_user('@medvedevRussia'))
 right_users.append(api.get_user('@PutinRF'))

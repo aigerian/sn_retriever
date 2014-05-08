@@ -4,10 +4,12 @@ from urllib import addbase
 from bson import DBRef, ObjectId
 from contrib.api.entities import APIUser, APIMessage
 from contrib.db import DataBase
+from itsdangerous import _CompactJSON
 
 from neo4jrestclient.client import GraphDatabase, IndexKey, Node, Relationship
 from neo4jrestclient.exceptions import TransactionException
 from neo4jrestclient.utils import text_type
+import redis
 
 __author__ = '4ikist'
 
@@ -22,97 +24,140 @@ from properties import *
 log = logging.getLogger('database')
 
 
-class GraphDataBaseMixin(object):
-    def __init__(self, truncate):
-        self.db = GraphDatabase(gdb_host)
+# class GraphDataBaseMixin(object):
+#     def __init__(self, truncate):
+#         self.db = GraphDatabase(gdb_host)
+#         if truncate:
+#             tx = self.db.transaction(for_query=True)
+#             tx.append("MATCH (n) OPTIONAL MATCH (n)-[r]-() DELETE n,r")
+#             tx.commit()
+#
+#         with self.db.transaction() as tx:
+#             self.node_index = self.db.nodes.indexes.create('users')
+#             self.relationships_index = self.db.relationships.indexes.create('relations')
+#             tx.commit()
+#
+#     def __create_relation_index_name(self, f, t, rtype):
+#         return '_'.join([str(f), str(t), str(rtype)])
+#
+#     def get_node(self, user_id):
+#         node_index = self.node_index.get('id', user_id)
+#         if isinstance(node_index, IndexKey) or not len(node_index):
+#             return None
+#         return node_index[0]
+#
+#     def save_user_node(self, user_id):
+#         node = self.get_node(user_id)
+#         if not node:
+#             node = self.db.nodes.create(id=user_id)
+#             self.node_index.add('id', user_id, node)
+#         return node
+#
+#     def update_relations(self, new_rels, old_rels):
+#         from_id = old_rels[0].get('from')
+#         rel_type = old_rels[0].get('type')
+#         #delete old relations
+#         for i in xrange(len(old_rels) / 100 + 1):
+#             self.db.query(q="""
+#                 START f=node(*), t=node(*)
+#                 MATCH f-[rel:%s]->t
+#                 WHERE f.id = %s AND t.id IN [%s]
+#                 DELETE rel
+#                 """ % (rel_type, from_id, ','.join([str(el.get('to')) for el in old_rels[i * 100:(i + 1) * 100]])))
+#
+#         #save new relations
+#         for new_rel in new_rels:
+#             self.save_relation(from_id, new_rel.get('to'), rel_type)
+#
+#     def save_relation(self, from_user_id, to_user_id, relation_type):
+#         if not isinstance(from_user_id, str) and not isinstance(to_user_id, str):
+#             from_user_id, to_user_id = str(from_user_id), str(to_user_id)
+#         f, t = self.save_user_node(from_user_id), self.save_user_node(to_user_id)
+#         rel = self.db.relationships.create(f, relation_type, t)
+#         self.relationships_index.add(relation_type,
+#                                      self.__create_relation_index_name(from_user_id, to_user_id, relation_type),
+#                                      rel)
+#         return rel
+#
+#     def get_path(self, from_user_id, to_user_id, relation_type, only_nodes=False, only_length=True, directed=True):
+#         log.info('getting path length [%s]-[%s]->[%s]' % (from_user_id, relation_type, to_user_id))
+#
+#         def accumulate_nodes(elements):
+#             result = [el.get('data').get(u'id') for el in elements]
+#             return result
+#
+#         with self.db.transaction() as tx:
+#             from_node, to_node = self.get_node(from_user_id), self.get_node(to_user_id)
+#             tx.commit()
+#
+#         if not from_node or not to_node or not isinstance(from_node, Node) or not isinstance(to_node, Node):
+#             return None
+#
+#         if only_length:
+#             returns = 'length(p)'
+#             returns_param = text_type
+#         elif only_nodes:
+#             returns = 'NODES(p)[1..-1]'
+#             returns_param = accumulate_nodes
+#         else:
+#             returns = 'p'
+#             returns_param = 'path'
+#
+#         query_result = self.db.query(q="""
+#         START f_n=node(%s), t_n=node(%s)
+#         MATCH p = shortestPath(f_n-[:%s*..1000]-%st_n)
+#         RETURN %s
+#          """ % (from_node.id,
+#                 to_node.id,
+#                 relation_type,
+#                 '>' if directed else '',
+#                 returns
+#         ), returns=returns_param)
+#         if len(query_result):
+#             return query_result[0][0]
+#         else:
+#             return None
+
+
+class RedisBaseMixin(object):
+    def __init__(self, truncate=False):
+        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
         if truncate:
-            tx = self.db.transaction(for_query=True)
-            tx.append("MATCH (n) OPTIONAL MATCH (n)-[r]-() DELETE n,r")
-            tx.commit()
+            self.engine.flushdb()
 
-        with self.db.transaction() as tx:
-            self.node_index = self.db.nodes.indexes.create('users')
-            self.relationships_index = self.db.relationships.indexes.create('relations')
-            tx.commit()
 
-    def __create_relation_index_name(self, f, t, rtype):
-        return '_'.join([str(f), str(t), str(rtype)])
+    def get_list_name(self, from_, type_):
+        return '%s:%s' % (from_, type_)
 
-    def get_node(self, user_id):
-        node_index = self.node_index.get('id', user_id)
-        if isinstance(node_index, IndexKey) or not len(node_index):
-            return None
-        return node_index[0]
-
-    def save_user_node(self, user_id):
-        node = self.get_node(user_id)
-        if not node:
-            node = self.db.nodes.create(id=user_id)
-            self.node_index.add('id', user_id, node)
-        return node
-
-    def update_relations(self, new_rels, old_rels):
-        from_id = old_rels[0].get('from')
-        rel_type = old_rels[0].get('type')
-        #delete old relations
-        for i in xrange(len(old_rels) / 100 + 1):
-            self.db.query(q="""
-                START f=node(*), t=node(*)
-                MATCH f-[rel:%s]->t
-                WHERE f.id = %s AND t.id IN [%s]
-                DELETE rel
-                """ % (rel_type, from_id, ','.join([str(el.get('to')) for el in old_rels[i * 100:(i + 1) * 100]])))
-
-        #save new relations
-        for new_rel in new_rels:
-            self.save_relation(from_id, new_rel.get('to'), rel_type)
-
-    def save_relation(self, from_user_id, to_user_id, relation_type):
-        if not isinstance(from_user_id, str) and not isinstance(to_user_id, str):
-            from_user_id, to_user_id = str(from_user_id), str(to_user_id)
-        f, t = self.save_user_node(from_user_id), self.save_user_node(to_user_id)
-        rel = self.db.relationships.create(f, relation_type, t)
-        self.relationships_index.add(relation_type,
-                                     self.__create_relation_index_name(from_user_id, to_user_id, relation_type),
-                                     rel)
-        return rel
-
-    def get_path(self, from_user_id, to_user_id, relation_type, only_nodes=False, only_length=True, directed=True):
-        def accumulate_nodes(elements):
-            result = [el.get('data').get(u'id') for el in elements]
-            return result
-
-        with self.db.transaction() as tx:
-            from_node, to_node = self.get_node(from_user_id), self.get_node(to_user_id)
-            tx.commit()
-
-        if not from_node or not to_node or not isinstance(from_node, Node) or not isinstance(to_node, Node):
-            return None
-
-        if only_length:
-            returns = 'length(p)'
-            returns_param = text_type
-        elif only_nodes:
-            returns = 'NODES(p)[1..-1]'
-            returns_param = accumulate_nodes
+    def save_relations(self, from_, to_, rel_type):
+        list_name = self.get_list_name(from_, rel_type)
+        if isinstance(to_, list):
+            for i in xrange((len(to_) / redis_batch_size) + 1):
+                log.info("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
+                self.engine.rpush(list_name,
+                                  *to_[i * redis_batch_size:(i + 1) * redis_batch_size])
         else:
-            returns = 'p'
-            returns_param = 'path'
+            self.engine.rpush(list_name, to_)
+        return list_name
 
-        query_result = self.db.query(q="""
-        START f_n=node(%s), t_n=node(%s)
-        MATCH p = shortestPath(f_n-[:%s*..1000]-%st_n)
-        RETURN %s
-         """ % (from_node.id,
-                to_node.id,
-                relation_type,
-                '>' if directed else '',
-                returns
-        ), returns=returns_param)
-        if len(query_result):
-            return query_result[0][0]
-        else:
-            return None
+
+    def get_rels(self, from_, rel_type):
+        return self.engine.lrange(self.get_list_name(from_, rel_type), 0, -1)
+
+    def get_count(self, from_, rel_type):
+        return self.engine.llen(self.get_list_name(from_, rel_type))
+
+    def get_rels_and_remove(self, from_, rel_type):
+        list_name = self.get_list_name(from_, rel_type)
+        result = self.engine.lrange(list_name, 0, -1)
+        self.engine.ltrim(list_name, 0, 0)
+        self.engine.lpop(list_name)
+        return result
+
+    def remove_rel(self, from_, rel_type, to_):
+        list_name = self.get_list_name(from_, rel_type)
+        self.engine.lrem(list_name, 0, to_)
+        return list_name
 
 
 class DataBasePathException(Exception):
@@ -167,37 +212,33 @@ class Persistent(object):
 
         self.users = self.database['users']
         self.__create_index(self.users, 'sn_id', pymongo.ASCENDING, True)
-        self.__create_index(self.users, 'screen_name', pymongo.ASCENDING, True)
+        self.__create_index(self.users, 'screen_name', pymongo.ASCENDING, False)
 
         self.social_objects = self.database['social_objects']
         self.__create_index(self.social_objects, 'sn_id', pymongo.ASCENDING, True)
 
-        self.relations = self.database['relations']
-        self.__create_index(self.relations, ['from', 'to', 'type'], pymongo.ASCENDING, True)
-        self.__create_index(self.relations, 'update_date', pymongo.ASCENDING, False)
-        self.__create_index(self.relations, 'position', pymongo.ASCENDING, False)
-
         self.not_loaded_users = self.database['not_loaded_users']
+        # self.__create_index(self.not_loaded_users, 'sn_id', pymongo.ASCENDING, True)
 
-        self.graph_db = GraphDataBaseMixin(truncate)
+        self.relations_metadata = self.database['relations_metadata']
+        self.__create_index(self.relations_metadata, 'relations_of', pymongo.ASCENDING, True)
+
+        self.redis = RedisBaseMixin(truncate)
 
         if truncate:
             self.users.remove()
             self.messages.remove()
-            self.relations.remove()
             self.social_objects.remove()
             self.not_loaded_users.remove()
-
-    def get_created_at(self, object_type, object_sn_id):
-        object_type += 's'
-        if object_type in self.database.collection_names(include_system_collections=False):
-            return self.database[object_type].find_one({'sn_id': object_sn_id})
-        return None
+            self.relations_metadata.remove()
 
     def get_user_ref(self, user):
         return DBRef(self.users.name, user.get('_id'))
 
     def get_users(self, parameter=None):
+        if parameter and isinstance(parameter, dict) and parameter.get('screen_name'):
+            parameter['screen_name'] = parameter.get('screen_name').lower()
+
         users = self.users.find(parameter)
         return [APIUser(el, from_db=True) for el in users]
 
@@ -213,7 +254,7 @@ class Persistent(object):
         elif sn_id:
             request_params['sn_id'] = sn_id
         elif screen_name:
-            request_params['screen_name'] = screen_name[1:] if '@' == screen_name[0] else screen_name
+            request_params['screen_name'] = screen_name[1:].lower() if '@' == screen_name[0] else screen_name.lower()
         else:
             return None
         user = self.users.find_one(request_params)
@@ -222,15 +263,23 @@ class Persistent(object):
         if user:
             return APIUser(user, from_db=True)
 
-    def save_user(self, user, update=True):
-        if user.get('screen_name') is None:
+    def is_not_loaded(self, user_sn_id):
+        result = self.not_loaded_users.find_one({'_id': user_sn_id})
+        if result:
+            return True
+        result = self.users.find_one({'sn_id': user_sn_id})
+        if not result:
+            return True
+        return False
+
+    def save_user(self, user):
+        screen_name = user.get('screen_name')
+        if screen_name is None:
             raise DataBaseUserException('user have not screen_name')
-        if update:
-            result = self._save_or_update_object(self.users, user['sn_id'], user)
-        else:
-            result = self.users.save(user)
-        self.not_loaded_users.remove({'user_ref': DBRef(self.users.name, result)})
-        self.graph_db.save_user_node(str(result))
+        user['screen_name'] = screen_name.lower()
+        result = self._save_or_update_object(self.users, user['sn_id'], user)
+        self.not_loaded_users.remove({'_id': user.get('sn_id')})
+        user['_id'] = result
         return result
 
     def get_messages_by_text(self, text, limit=100, score_more_than=1):
@@ -277,80 +326,60 @@ class Persistent(object):
         return result
 
     def retrieve_relations_for_diff(self, from_id, relation_type):
-        found = self.relations.find({'from': from_id, 'type': relation_type}).sort('position')
-        result = []
-        for el in found:
-            user = self.users.find_one({'_id': el.get('to')})
-            result.append(user.get('sn_id'))
-        self.relations.remove({'from': from_id, 'type': relation_type})
-
+        result = [int(el) for el in self.redis.get_rels_and_remove(from_id, relation_type)]
         return result
 
-    def save_relations_for_diff(self, from_id, new_relation_set, relation_type, added_rels, removed_rels):
-        def find_or_create_user(sn_id):
-            user = self.get_user(sn_id=sn_id)
-            if not user:
-                user_id = self.users.save({'sn_id': sn_id})
-                self.not_loaded_users.save({'user_ref': DBRef(self.users.name, user_id)})
-                return user_id
-            return user.get('_id')
+    def save_relations_for_diff(self, from_id, new_relation_set, relation_type):
+        list_name = self.redis.save_relations(from_id, new_relation_set, relation_type)
+        self.update_relations_metadata(list_name)
+        for el in new_relation_set:
+            if not self.users.find_one({'sn_id': el}):
+                self.not_loaded_users.save({'_id': el})
 
-        for position, relation in enumerate(new_relation_set.reverse()):
-            to = find_or_create_user(sn_id=relation)
-            self.save_relation(from_=from_id, to_=to, relation_data={'type': relation_type}, position=position)
+    def save_relation(self, from_id, to_id, relation_type):
+        list_name = self.redis.save_relations(from_id, to_id, relation_type)
+        self.update_relations_metadata(list_name)
 
-        self.graph_db.update_relations(added_rels, removed_rels)
+    def remove_relation(self, from_id, to_id, relation_type):
+        list_name = self.redis.remove_rel(from_id, relation_type, to_id)
+        self.update_relations_metadata(list_name)
 
-    def get_related_users(self, from_id=None, to_id=None, relation_type=None, result_key=None):
+    def update_relations_metadata(self, metadata_name):
+        res = self.relations_metadata.find_one({'relations_of': metadata_name})
+        if res:
+            res['update_date'] = datetime.now()
+            self.relations_metadata.save(res)
+        else:
+            self.relations_metadata.save({'relations_of': metadata_name, 'update_date': datetime.now()})
+
+    def get_related_users(self, from_id, relation_type, result_key=None, only_sn_ids=False):
         """
         :param from_id - if it is none - return users which from to to_id (subject - [relation_type] -> user with to_id)
         else: (user with from_id - [relation_type] -> subject)
         :param result_key - key of user if None - user object
         :returns related users which related from or to or some user's element (retrieve by param: result_key)
         """
-        params = {}
-        if from_id:
-            params['from'] = from_id
-        if to_id:
-            params['to'] = to_id
-        if relation_type:
-            params['type'] = relation_type
-        out_refs = self.relations.find(params).sort('position')
+        refs = self.redis.get_rels(from_id, relation_type)
         result = []
-        for el in out_refs:
-            result_element = self.get_user(_id=el.get('to') if params.has_key('from') else el.get('from'))
+        for el in refs:
+            if only_sn_ids:
+                result.append(int(el))
+                continue
+            result_element = self.get_user(sn_id=int(el))
             if result_key is None:
                 result.append(result_element)
             else:
                 result.append(result_element.get(result_key))
         return result
 
-    def save_relation(self, from_, to_, relation_data=None, position=None):
-        """
-        saving relation from and to must be id from database
-        """
-        if not relation_data: relation_data = {'type': None}
-        if not position:
-            rel_with_last_position = list(self.relations.find({'from': from_}).sort('position', -1).limit(1))
-            if not len(rel_with_last_position):
-                position = 1
-            else:
-                position = int(rel_with_last_position[0].get('position')) + 1
-        rel_type = relation_data.pop('type')
-        log.info('saving relation [%s] - [%s] -> [%s] with relation data:\n %s' % (from_, rel_type, to_, relation_data))
-        try:
-            result = self.relations.save({'from': from_, 'to': to_,
-                                          'type': rel_type,
-                                          'data': relation_data,
-                                          'update_date': datetime.now(),
-                                          'position': position
-            })
-            self.graph_db.save_relation(from_, to_, rel_type)
-            return result
-        except Exception as e:
-            log.exception(e)
-            log.warn('can not save relation: %s -[%s]-> %s [%s] \n%s' % (from_, to_, rel_type, position, e))
+    def get_relations_count(self, from_id, relations_type):
+        return self.redis.get_count(from_id, relations_type)
 
+    def get_relations_update_time(self, from_id, relation_type):
+        result = self.relations_metadata.find_one({'relations_of': self.redis.get_list_name(from_id, relation_type)})
+        if result:
+            return result.get('update_date')
+        return None
 
     def _save_or_update_object(self, sn_object, sn_id, object_data):
         """
@@ -359,7 +388,7 @@ class Persistent(object):
         """
         assert sn_id is not None
         object_data['update_date'] = datetime.now()
-        log.info('saving object: [%s]\n%s' % (sn_id, object_data))
+        log.info('saving object: [%s]\n%s' % (object_data.get('screen_name') or sn_id, object_data))
         founded_user = sn_object.find_one({'sn_id': sn_id})
         if founded_user:
             founded_user = dict(founded_user)
@@ -371,34 +400,14 @@ class Persistent(object):
         return result
 
 
-class GraphPersistent(Persistent):
-    def __init__(self, *args, **kwargs):
-        super(GraphPersistent, self).__init__(*args, **kwargs)
-
-    def __get_user_graph_id(self, stuff):
-        if isinstance(stuff, str):
-            return stuff
-        if isinstance(stuff, APIUser):
-            return str(stuff.get('_id'))
-        if isinstance(stuff, ObjectId):
-            return str(stuff)
-
-    def get_path_length(self, from_user, to_user, relation_type, directed=True):
-        result = self.graph_db.get_path(self.__get_user_graph_id(from_user), self.__get_user_graph_id(to_user),
-                                        relation_type, directed=directed)
-        if result:
-            return int(result)
-        else:
-            return None
-
-    def get_path_users(self, from_user, to_user, relation_type, directed=True):
-        gdb_result = self.graph_db.get_path(self.__get_user_graph_id(from_user), self.__get_user_graph_id(to_user),
-                                            relation_type, only_nodes=True, only_length=False, directed=directed)
-        if gdb_result is None:
-            return None
-        result = [self.get_user(_id=el) for el in gdb_result]
-        return result
-
-
 if __name__ == '__main__':
-    pass
+    import random
+    from datetime import datetime
+
+    r = RedisBaseMixin(truncate=True)
+
+    r.save_relations(1, [random.randint(0, 1000) for el in range(10)], 'friends')
+    print r.get_count(1, 'friends')
+    print r.get_rels(1, 'friends')
+    print r.get_rels_and_remove(1, 'friends')
+    print r.get_rels(1, 'friends')

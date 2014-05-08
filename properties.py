@@ -193,4 +193,8 @@ local_proxy_list = os.path.join(os.path.dirname(__file__), 'proxy_list')
 #время в течении которого не будет обновлятся данные в БД
 user_cache_time = 3600
 message_cache_time = 100
-relation_cache_time = 30*24*3600
+relation_cache_time = 360000
+
+redis_host = 'localhost'
+redis_port = 6379
+redis_batch_size = 185000

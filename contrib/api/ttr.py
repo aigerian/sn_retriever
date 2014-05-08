@@ -54,7 +54,7 @@ class TTRLimitHandler(object):
         if self.requests_types.get(request_name):
             credential_number, seconds = self._get_first(self.requests_types[request_name])
         else:
-            self.requests_types[request_name] = dict([(el, None) for el in range(1, max_apps_count)])
+            self.requests_types[request_name] = dict([(el, None) for el in xrange(1, max_apps_count)])
             credential_number, seconds = random.randint(1, max_apps_count - 1), 999
 
         wait_seconds = wait_times[request_name] - seconds
@@ -73,10 +73,10 @@ class TTRLimitHandler(object):
             self.requests_types[request_name][credential_number] = request_time
         else:
             self.requests_types[request_name] = dict(
-                [(el, None if el != credential_number else request_time) for el in range(1, max_apps_count)])
+                [(el, None if el != credential_number else request_time) for el in xrange(1, max_apps_count)])
 
 
-class TTR_API(object):
+class __TTR_API(object):
     work_end = 'work_end'
 
     def __init__(self):
@@ -111,13 +111,15 @@ class TTR_API(object):
         while True:
             cred_number, wait_time = self.limit_handler.get_credentials_number(request_name)
             try:
-                log.info('send_request:  %s' % request_name)
+                log.info('send_request:  %s %s [%s]' % (request_name, str(kwargs), wait_time))
                 callback.im_self._client = self._form_new_client(cred_number, use_proxy)
                 time.sleep(wait_time)
                 request_time = datetime.now()
                 response = callback(**kwargs)
                 return response
             except TwitterApiError as e:
+                if 'Invalid API resource' in e.message:
+                    raise
                 log.exception(e)
                 return None
             except TwitterClientError as e:
@@ -129,12 +131,14 @@ class TTR_API(object):
                 use_proxy = True
             except Exception as e:
                 log.exception(e)
+            except MemoryError as e:
+                log.exception(e)
             finally:
                 self.limit_handler.consider_credentials_number(request_name, cred_number, request_time)
 
     def get_relation_ids(self, user, relation_type='friends', from_cursor=-1):
         response = self.__get_data(self.client.api[relation_type].ids.get,
-                                   screen_name=user.get('screen_name'),
+                                   user_id=user.get('sn_id'),
                                    count=5000,
                                    cursor=from_cursor)
         if response:
@@ -144,7 +148,7 @@ class TTR_API(object):
         cursor = from_cursor
         while True:
             response = self.__get_data(self.client.api[relation_type].list.get,
-                                       screen_name=user['screen_name'],
+                                       user_id=user['sn_id'],
                                        count=200,
                                        cursor=cursor,
                                        skip_status=False,
@@ -193,24 +197,25 @@ class TTR_API(object):
             return None
 
     def get_users(self, ids=None, screen_names=None):
+        def fill_data(request_params):
+            response = self.__get_data(self.client.api.users.lookup.get, **request_params)
+            if response:
+                for user in response.data:
+                    result.append(self._form_user(user))
+
         result = []
         request_params = {}
         if ids:
             for i in xrange((len(ids) / 100) + 1):
                 request_params['user_id'] = ",".join([str(el) for el in ids[i * 100:(i + 1) * 100]])
-                response = self.__get_data(self.client.api.users.lookup.get, request_params)
-                if response:
-                    for user in response.data:
-                        result.append(self._form_user(user))
+                fill_data(request_params)
 
         if screen_names:
             for i in xrange((len(screen_names) / 100) + 1):
                 request_params['screen_name'] = ",".join([str(el) for el in screen_names[i * 100:(i + 1) * 100]])
-                response = self.__get_data(self.client.api.users.lookup.get, request_params)
-                if response:
-                    for user in response.data:
-                        result.append(self._form_user(user))
+                fill_data(request_params)
 
+        log.info("must load: %s; loaded: %s" % (len(ids or screen_names), len(result)))
         return result
 
 
@@ -274,7 +279,7 @@ class TTR_API(object):
             if response and len(response.data.statuses):
                 max_id = response.data.statuses[-1][u'id']
                 for el in response.data.statuses:
-                    yield self.__ensure_message_params(el)
+                    yield self._form_message(el)
                 if len(response.data.statuses) < 99:
                     break
             else:
@@ -286,7 +291,14 @@ class TTR_API(object):
         response = self.__get_data(self.client.api.statuses.retweets.get, **params)
         retweets = response.data
         for el in retweets:
-            yield self.__ensure_message_params(el)
+            yield self._form_message(el)
+
+
+api = __TTR_API()
+
+
+def get_api():
+    return api
 
 
 if __name__ == '__main__':
@@ -319,7 +331,7 @@ if __name__ == '__main__':
     # user2 = api.get_user(screen_name='@lutakisel4ikova')
     # rel_date = api.get_friendship_data(user1,user2)
 
-    api = TTR_API()
+    api = __TTR_API()
     # medved = api.get_user(screen_name = 'linoleum2k12')
     # followers,cursor = api.get_relation_ids(medved,relation_type='followers')
     result = api.get_all_timeline({'screen_name': 'linoleum2k12'})

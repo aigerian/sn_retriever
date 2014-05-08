@@ -2,15 +2,17 @@
 __author__ = '4ikist'
 
 find_states = ['find_before_crossing', 'find_after_crossing']
-
+import numpy as np
 
 class TTR_Tracking(object):
     def __init__(self, api, db):
         self.api = api
         self.db = db
 
+    #todo use here numpy
     def get_relations_diff(self, user, delta, relations_type='friends'):
-        saved_relations = self.db.retrieve_relations_for_diff(user.get('_id'), relation_type=relations_type)
+        saved_relations = self.db.retrieve_relations_for_diff(user.get('sn_id'), relation_type=relations_type)
+        # saved_relations.reverse()
         new = []
         remove = []
         acc = []
@@ -19,28 +21,34 @@ class TTR_Tracking(object):
         updated_delta = delta
         while (updated_delta != 0):
             result = self.api.get_relation_ids(user, relations_type, from_cursor)
-            updated_delta = delta
             if result:
                 batch, cursor = result
-                for i, batch_el in enumerate(batch):
+                current_new, current_remove = [], []
+                for batch_el in batch:
                     if batch_el not in saved_relations:
-                        new.append(batch_el)
+                        current_new.append(batch_el)
                     else:
                         cross_right = saved_relations.index(batch_el)
                         if cross_left is None:
-                            remove.extend(saved_relations[:cross_right])
+                            current_remove.extend(saved_relations[:cross_right])
                         else:
-                            remove.extend(saved_relations[cross_left + 1:cross_right])
+                            current_remove.extend(saved_relations[cross_left + 1:cross_right])
                         cross_left = cross_right
                     acc.append(batch_el)
-                updated_delta -= len(new)
-                updated_delta += len(remove)
+                updated_delta -= len(current_new)
+                updated_delta += len(current_remove)
+                new.extend(current_new)
+                remove.extend(current_remove)
                 from_cursor = cursor
+                if cursor == 0:
+                    break
             else:
                 break
-
-        acc.extend(saved_relations[cross_left + 1:])
-        self.db.save_relations_for_diff(user.get('_id'), acc, relations_type, new, remove)
+        if cross_left:
+            acc.extend(saved_relations[cross_left + 1:])
+        user['%s_count' % relations_type] = len(acc)
+        self.db.save_user(user)
+        self.db.save_relations_for_diff(user.get('sn_id'), acc, relations_type)
         return new, remove, acc
 
 

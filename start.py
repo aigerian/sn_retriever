@@ -8,7 +8,7 @@ import re
 
 from pymorphy2 import MorphAnalyzer
 
-from contrib.api.ttr import TTR_API
+from contrib.api.ttr import __TTR_API
 from contrib.timers import stopwatch
 
 log = logging.getLogger('main')
@@ -61,7 +61,7 @@ def test(n):
 
 
 if __name__ == '__main__':
-    ttr = TTR_API()
+    ttr = __TTR_API()
     result = [el['text'] for el in ttr.search(u'чеснок')]
     for el in result:
         log.info('[%s]' % el)

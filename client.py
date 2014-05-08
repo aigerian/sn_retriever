@@ -2,7 +2,7 @@ import random
 import time
 from contrib.api.entities import APIException, APIRequestOverflowException
 from contrib.api.fb import FB_API
-from contrib.api.ttr import TTR_API
+from contrib.api.ttr import __TTR_API
 from contrib.api.vk import VK_API
 
 __author__ = '4ikist'
@@ -24,7 +24,7 @@ class Worker(object):
         self.queue_handler = QueueWorker(self.process)
         self.client_name = client_name
         log.info('initializing apis')
-        self.apis = {'vk': VK_API(), 'fb': FB_API(), 'ttr': TTR_API()}
+        self.apis = {'vk': VK_API(), 'fb': FB_API(), 'ttr': __TTR_API()}
 
     def process(self, message):
         sn = message.get('sn')

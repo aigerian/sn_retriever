@@ -146,8 +146,8 @@ def test_user_loads(ttr):
 
 if __name__ == '__main__':
     # Neo4j_handler(truncated=True)
-    from contrib.api.ttr import TTR_API
+    from contrib.api.ttr import __TTR_API
 
-    ttr = TTR_API()
+    ttr = __TTR_API()
     # test_user_loads(ttr)
     ttr.get_relations(screen_name='linoleum2k12')
