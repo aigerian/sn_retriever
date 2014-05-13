@@ -229,7 +229,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
             saved_count = self.database.get_relations_count(api_user.get('sn_id'), relations_type)
             delta = real_count - saved_count
             new, removed, _ = self.tracker.get_relations_diff(saved_user, delta, relations_type=relations_type)
-            new_users = self.api.get_users(new)
+            new_users, _ = self.api.get_users(new)
             for el in new_users:
                 self.database.save_user(el)
         related_users = self.database.get_related_users(from_id=saved_user.get('sn_id'), relation_type=relations_type)
@@ -269,7 +269,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
             else:
                 result.append(user)
         if self.api:
-            retrieved = self.api.get_users(screen_names=not_in_db_users)
+            retrieved,_ = self.api.get_users(screen_names=not_in_db_users)
             for user in retrieved:
                 self.database.save_user(user)
                 result.append(user)

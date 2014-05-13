@@ -1,7 +1,10 @@
 from datetime import datetime
 from functools import partial
-import networkx as nx
 
+import networkx as nx
+from networkx import NetworkXNoPath
+
+from contrib.api.entities import APIUser
 from contrib.api.ttr import get_api
 from contrib.core.tracking import TTR_Tracking
 from contrib.db.database_engine import Persistent
@@ -34,23 +37,26 @@ class TTR_Graph(nx.DiGraph):
             while cursor != 0:
                 result = self.api.get_relation_ids({'sn_id': n}, relation_type=rel_type, from_cursor=cursor)
                 if not result:
-                    yield None
                     break
                 related_ids, cursor = result
                 not_loaded_users = []
                 for user_id in related_ids:
                     if self.persistent.is_not_loaded(user_id):
                         not_loaded_users.append(user_id)
-                loaded_users = self.api.get_users(ids=not_loaded_users)
-                for loaded_user in loaded_users:
+                loaded, not_loaded = self.api.get_users(ids=not_loaded_users)
+                for loaded_user in loaded:
                     self.persistent.save_user(loaded_user)
-                del loaded_users
+                del loaded
                 for el in related_ids:
+                    if el in not_loaded:
+                        continue
                     self.persistent.save_relation(from_id=n, to_id=el, relation_type=rel_type)
                     yield el
         else:
             if (datetime.now() - update_date).total_seconds() > properties.relation_cache_time:
                 updated_n = self.api.get_user(user_id=n)
+                if not updated_n:
+                    yield None
                 real_refs_count = self.persistent.get_relations_count(n, rel_type)
                 delta = updated_n.get('%s_count' % rel_type) - real_refs_count
                 if delta != 0:
@@ -83,6 +89,8 @@ class TTR_Graph(nx.DiGraph):
         return partial(self.get_related_iterator, 'followers')(n)
 
     def __get_user_node(self, screen_name):
+        if isinstance(screen_name, APIUser):
+            return screen_name
         result = self.persistent.get_user(screen_name=screen_name)
         if not result:
             if self.api:
@@ -96,10 +104,22 @@ class TTR_Graph(nx.DiGraph):
 
     def shortest_path(self, from_screen_name, to_screen_name):
         f, t = self.__get_user_node(from_screen_name), self.__get_user_node(to_screen_name)
-        return nx.shortest_path(self, f.get('sn_id'), t.get('sn_id'))
+        try:
+            result = nx.shortest_path(self, f.get('sn_id'), t.get('sn_id'))
+            return result
+        except NetworkXNoPath as e:
+            return None
+
 
     def shortest_path_length(self, from_screen_name, to_screen_name):
-        return len(self.shortest_path(from_screen_name, to_screen_name))
+        """
+        return length between two nodes
+         if no path between - return -1
+        """
+        result = self.shortest_path(from_screen_name, to_screen_name)
+        if result:
+            return len(result)
+        return -1
 
 
 if __name__ == '__main__':

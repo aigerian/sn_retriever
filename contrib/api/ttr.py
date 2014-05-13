@@ -118,8 +118,6 @@ class __TTR_API(object):
                 response = callback(**kwargs)
                 return response
             except TwitterApiError as e:
-                if 'Invalid API resource' in e.message:
-                    raise
                 log.exception(e)
                 return None
             except TwitterClientError as e:
@@ -201,9 +199,11 @@ class __TTR_API(object):
             response = self.__get_data(self.client.api.users.lookup.get, **request_params)
             if response:
                 for user in response.data:
+                    result_ids.add(user.get('sn_id'))
                     result.append(self._form_user(user))
 
         result = []
+        result_ids = set()
         request_params = {}
         if ids:
             for i in xrange((len(ids) / 100) + 1):
@@ -215,8 +215,10 @@ class __TTR_API(object):
                 request_params['screen_name'] = ",".join([str(el) for el in screen_names[i * 100:(i + 1) * 100]])
                 fill_data(request_params)
 
-        log.info("must load: %s; loaded: %s" % (len(ids or screen_names), len(result)))
-        return result
+        log.info("must load: %s; loaded: %s" % (
+            len(ids) if ids else 0 + len(screen_names) if screen_names else 0, len(result)))
+        not_loaded = result_ids.symmetric_difference(result_ids)
+        return result, not_loaded
 
 
     def get_message(self, message_id):

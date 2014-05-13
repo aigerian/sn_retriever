@@ -1,10 +1,11 @@
 # coding=utf-8
 import sys
 
-from contrib.api.ttr import __TTR_API, get_api
+from contrib.api.ttr import get_api
 from contrib.core.characteristics import TTR_Characterisitcs
 from contrib.core.social_net_graph import TTR_Graph
-from contrib.db.database_engine import Persistent, GraphPersistent
+from contrib.db.database_engine import Persistent
+from networkx import NetworkXNoPath
 
 __author__ = '4ikist'
 
@@ -43,11 +44,11 @@ class LataneFunctions(object):
                     continue
                 #выберим
                 val = max(mention_users.get(u_i), mention_users.get(u_j))
+
                 distance_from = self.social_net_graph.shortest_path_length(u_i, u_j)
                 distance_to = self.social_net_graph.shortest_path_length(u_j, u_i)
-
-                distance = max(distance_to, distance_from) or sys.maxint
-
+                distance = max(distance_to, distance_from)
+                distance = distance if distance != -1 else sys.maxint
                 x += float(val) / pow(distance, alpha)
 
         result = -beta * sum(mention_users.values()) - x \
@@ -61,8 +62,12 @@ class LataneFunctions(object):
 if __name__ == '__main__':
     api = get_api()
     persistent = Persistent()
-    characteristics = TTR_Characterisitcs(persistent,api)
-    social_net_graph = TTR_Graph()
-    latane = LataneFunctions(Persistent(), get_api())
+    characteristics = TTR_Characterisitcs(persistent, api)
+    social_net_graph = TTR_Graph(persistent, api)
+    latane = LataneFunctions(characteristics, social_net_graph)
+
+    medved = persistent.get_user(screen_name='@medvedevRussia')
+    result = latane.execute(medved)
+    print result
 
         
