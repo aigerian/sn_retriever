@@ -9,7 +9,7 @@ import re
 from pymorphy2 import MorphAnalyzer
 
 from contrib.api.ttr import __TTR_API
-from contrib.timers import stopwatch
+from contrib.utils import process_message
 
 log = logging.getLogger('main')
 
@@ -50,7 +50,6 @@ split_reg = re.compile(u'[^a-zA-Z0-9а-яёА-ЯЁ@#\*_-]+')
 
 
 
-@stopwatch
 def test(n):
     for i in range(n):
         j = i * i

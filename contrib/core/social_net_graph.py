@@ -55,7 +55,7 @@ class TTR_Graph(nx.DiGraph):
         else:
             if (datetime.now() - update_date).total_seconds() > properties.relation_cache_time:
                 updated_n = self.api.get_user(user_id=n)
-                if not updated_n:
+                if updated_n is None:
                     yield None
                 real_refs_count = self.persistent.get_relations_count(n, rel_type)
                 delta = updated_n.get('%s_count' % rel_type) - real_refs_count
