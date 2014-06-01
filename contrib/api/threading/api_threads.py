@@ -53,4 +53,3 @@ if __name__ == '__main__':
     print h.is_ready(identity)
     print h.is_ready(identity)
     print h.is_ready(identity)
-    print h.get_result(identity)

@@ -9,6 +9,8 @@ from contrib.utils import process_message
 
 __author__ = '4ikist'
 
+not_ended = 'not_ended'
+
 
 class ServerHelper(object):
     def __init__(self, persistent, api):
@@ -30,7 +32,19 @@ class ServerHelper(object):
             rt_count = 0
             for el in messages:
                 rt_count += el.get('retweet_count')
-            return {'mentions': mentions, 'hashtags': hashtags, 'urls': urls, 'retweets_count': rt_count}
+            latane_function_result = self.latane.execute(user)
+            latane_function_with_ht_result = self.latane.execute(user, include_hash_tags=True)
+            latane_function_with_urls_result = self.latane.execute(user, include_urls=True)
+            latane_function_with_ht_and_urls_result = self.latane.execute(user, include_urls=True,
+                                                                          include_hash_tags=True)
+            return {'mentions': mentions,
+                    'hashtags': hashtags,
+                    'urls': urls,
+                    'retweets_count': rt_count,
+                    'latane': latane_function_result,
+                    'latane_ht': latane_function_with_ht_result,
+                    'latane_urls': latane_function_with_urls_result,
+                    'latane_ht_urls': latane_function_with_ht_and_urls_result}
 
         user = self.persistent.get_user(screen_name=screen_name)
         if user:
@@ -38,31 +52,24 @@ class ServerHelper(object):
             if extended_info:
                 return {'user': user, 'extended_info': extended_info}
             else:
-                wait_for_extended_info = self.th.call(self.latane.execute, user=user)
-                self.waited[wait_for_extended_info] = {'wait': 'extended_info'}
-                return {'user': user, 'extended_info_wait': wait_for_extended_info}
+                wait_for_extended_info = self.th.call(ensure_user_extended_info, user=user)
+                self.waited[wait_for_extended_info] = {'screen_name': screen_name}
+                return {'wait': wait_for_extended_info}
         else:
-            wait_user = self.th.call(self.latane.execute, user=screen_name)
-            self.waited[wait_user] = {'wait': ['extended_info', 'user'], 'screen_name': screen_name}
-            return {'user_wait': wait_user, 'extended_info_wait': wait_user}
+            wait_user = self.th.call(ensure_user_extended_info, user=screen_name)
+            self.waited[wait_user] = {'screen_name': screen_name}
+            return {'wait': wait_user}
 
     def get_user_result(self, wait_identity):
+        if not self.th.is_ready(wait_identity):
+            return not_ended
+        result = self.th.get_result(wait_identity)
         wait_info = self.waited.get(wait_identity)
-        if wait_info:
-            if self.th.is_ready(wait_identity):
-                result = self.th.get_result(wait_identity)
-                if isinstance(wait_info.get('wait'), list):
-                    user = self.persistent.get_user(screen_name=wait_info.get('screen_name'))
-                    self.persistent.save_extended_user_info(user.get('_id'), {'latane_function': result})
-                    del self.waited[wait_identity]
-                    return {'user': user, 'extended_info': {'latane_function': result}}
-                elif isinstance(wait_info.get('wait'), str):
-                    del self.waited[wait_identity]
-                    return {'extended_info': {'latane_function': result}}
-            else:
-                return None
-        else:
-            return None
+        user = self.persistent.get_user(screen_name=wait_info.get('screen_name'))
+        self.persistent.save_extended_user_info(user_id=user.get('_id'), extended_info=result)
+        del self.waited[wait_identity]
+        return {'user': user, 'extended_info': result}
+
 
     def retrieve_result(gen):
         result = []
@@ -110,4 +117,5 @@ class ServerHelper(object):
 
 
 if __name__ == '__main__':
-    ServerHelper.ttr_photo_retriever().load_batch()
+    pass
+

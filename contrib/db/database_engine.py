@@ -1,153 +1,18 @@
 #coding: utf-8
+
+from datetime import datetime
+from bson import DBRef
 from contrib.api.entities import APIUser, APIMessage
+from pymongo import MongoClient, ASCENDING
 
+from pymongo.errors import ConnectionFailure, DuplicateKeyError, ConfigurationError
 import redis
-
-__author__ = '4ikist'
-
-import pymongo
-from pymongo.errors import ConnectionFailure, DuplicateKeyError
 
 from properties import *
 
+__author__ = '4ikist'
 
 log = logging.getLogger('database')
-
-
-# class GraphDataBaseMixin(object):
-#     def __init__(self, truncate):
-#         self.db = GraphDatabase(gdb_host)
-#         if truncate:
-#             tx = self.db.transaction(for_query=True)
-#             tx.append("MATCH (n) OPTIONAL MATCH (n)-[r]-() DELETE n,r")
-#             tx.commit()
-#
-#         with self.db.transaction() as tx:
-#             self.node_index = self.db.nodes.indexes.create('users')
-#             self.relationships_index = self.db.relationships.indexes.create('relations')
-#             tx.commit()
-#
-#     def __create_relation_index_name(self, f, t, rtype):
-#         return '_'.join([str(f), str(t), str(rtype)])
-#
-#     def get_node(self, user_id):
-#         node_index = self.node_index.get('id', user_id)
-#         if isinstance(node_index, IndexKey) or not len(node_index):
-#             return None
-#         return node_index[0]
-#
-#     def save_user_node(self, user_id):
-#         node = self.get_node(user_id)
-#         if not node:
-#             node = self.db.nodes.create(id=user_id)
-#             self.node_index.add('id', user_id, node)
-#         return node
-#
-#     def update_relations(self, new_rels, old_rels):
-#         from_id = old_rels[0].get('from')
-#         rel_type = old_rels[0].get('type')
-#         #delete old relations
-#         for i in xrange(len(old_rels) / 100 + 1):
-#             self.db.query(q="""
-#                 START f=node(*), t=node(*)
-#                 MATCH f-[rel:%s]->t
-#                 WHERE f.id = %s AND t.id IN [%s]
-#                 DELETE rel
-#                 """ % (rel_type, from_id, ','.join([str(el.get('to')) for el in old_rels[i * 100:(i + 1) * 100]])))
-#
-#         #save new relations
-#         for new_rel in new_rels:
-#             self.save_relation(from_id, new_rel.get('to'), rel_type)
-#
-#     def save_relation(self, from_user_id, to_user_id, relation_type):
-#         if not isinstance(from_user_id, str) and not isinstance(to_user_id, str):
-#             from_user_id, to_user_id = str(from_user_id), str(to_user_id)
-#         f, t = self.save_user_node(from_user_id), self.save_user_node(to_user_id)
-#         rel = self.db.relationships.create(f, relation_type, t)
-#         self.relationships_index.add(relation_type,
-#                                      self.__create_relation_index_name(from_user_id, to_user_id, relation_type),
-#                                      rel)
-#         return rel
-#
-#     def get_path(self, from_user_id, to_user_id, relation_type, only_nodes=False, only_length=True, directed=True):
-#         log.info('getting path length [%s]-[%s]->[%s]' % (from_user_id, relation_type, to_user_id))
-#
-#         def accumulate_nodes(elements):
-#             result = [el.get('data').get(u'id') for el in elements]
-#             return result
-#
-#         with self.db.transaction() as tx:
-#             from_node, to_node = self.get_node(from_user_id), self.get_node(to_user_id)
-#             tx.commit()
-#
-#         if not from_node or not to_node or not isinstance(from_node, Node) or not isinstance(to_node, Node):
-#             return None
-#
-#         if only_length:
-#             returns = 'length(p)'
-#             returns_param = text_type
-#         elif only_nodes:
-#             returns = 'NODES(p)[1..-1]'
-#             returns_param = accumulate_nodes
-#         else:
-#             returns = 'p'
-#             returns_param = 'path'
-#
-#         query_result = self.db.query(q="""
-#         START f_n=node(%s), t_n=node(%s)
-#         MATCH p = shortestPath(f_n-[:%s*..1000]-%st_n)
-#         RETURN %s
-#          """ % (from_node.id,
-#                 to_node.id,
-#                 relation_type,
-#                 '>' if directed else '',
-#                 returns
-#         ), returns=returns_param)
-#         if len(query_result):
-#             return query_result[0][0]
-#         else:
-#             return None
-
-
-class RedisBaseMixin(object):
-    def __init__(self, truncate=False):
-        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
-        if truncate:
-            self.engine.flushdb()
-
-
-    def get_list_name(self, from_, type_):
-        return '%s:%s' % (from_, type_)
-
-    def save_relations(self, from_, to_, rel_type):
-        list_name = self.get_list_name(from_, rel_type)
-        if isinstance(to_, list):
-            for i in xrange((len(to_) / redis_batch_size) + 1):
-                log.debug("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
-                self.engine.rpush(list_name,
-                                  *to_[i * redis_batch_size:(i + 1) * redis_batch_size])
-        else:
-            self.engine.rpush(list_name, to_)
-        return list_name
-
-
-    def get_rels(self, from_, rel_type):
-        return self.engine.lrange(self.get_list_name(from_, rel_type), 0, -1)
-
-    def get_count(self, from_, rel_type):
-        return self.engine.llen(self.get_list_name(from_, rel_type))
-
-    def get_rels_and_remove(self, from_, rel_type):
-        list_name = self.get_list_name(from_, rel_type)
-        result = self.engine.lrange(list_name, 0, -1)
-        self.engine.ltrim(list_name, 0, 0)
-        self.engine.lpop(list_name)
-        return result
-
-    def remove_rel(self, from_, rel_type, to_):
-        list_name = self.get_list_name(from_, rel_type)
-        self.engine.lrem(list_name, 0, to_)
-        return list_name
 
 
 class DataBasePathException(Exception):
@@ -164,6 +29,65 @@ class DataBaseRelationException(Exception):
 
 class DataBaseUserException(Exception):
     pass
+
+
+class RedisBaseMixin(object):
+    def __init__(self, truncate=False):
+        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
+        if truncate:
+            self.engine.flushdb()
+
+
+    def form_relations_list_name(self, from_, type_):
+        return '%s:%s' % (from_, type_)
+
+    def form_path_list_name(self, from_, to_):
+        return self.form_relations_list_name(from_, to_)
+
+    def save_relations(self, from_, to_, rel_type):
+        list_name = self.form_relations_list_name(from_, rel_type)
+        if isinstance(to_, list):
+            for i in xrange((len(to_) / redis_batch_size) + 1):
+                log.debug("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
+                self.engine.rpush(list_name,
+                                  *to_[i * redis_batch_size:(i + 1) * redis_batch_size])
+        else:
+            self.engine.rpush(list_name, to_)
+        return list_name
+
+
+    def get_rels(self, from_, rel_type):
+        return self.engine.lrange(self.form_relations_list_name(from_, rel_type), 0, -1)
+
+    def get_count(self, from_, rel_type):
+        return self.engine.llen(self.form_relations_list_name(from_, rel_type))
+
+    def get_rels_and_remove(self, from_, rel_type):
+        list_name = self.form_relations_list_name(from_, rel_type)
+        result = self.engine.lrange(list_name, 0, -1)
+        self.engine.ltrim(list_name, 0, 0)
+        self.engine.lpop(list_name)
+        return result
+
+    def remove_rel(self, from_, rel_type, to_):
+        list_name = self.form_relations_list_name(from_, rel_type)
+        self.engine.lrem(list_name, 0, to_)
+        return list_name
+
+    def save_path(self, elements):
+        p_name = self.form_path_list_name(elements[0], elements[-1])
+        self.engine.hmset(p_name, dict(enumerate(elements)))
+        return p_name
+
+    def get_path(self, from_, to_):
+        list_name = self.form_path_list_name(from_, to_)
+        result = self.engine.lrange(list_name, 0, -1)
+        return result
+
+    def remove_path(self, from_, to_):
+        list_name = self.form_path_list_name(from_, to_)
+        self.engine.ltrim(list_name, 0, 0)
+        self.engine.lpop(list_name)
 
 
 class Persistent(object):
@@ -184,9 +108,9 @@ class Persistent(object):
     def __init__(self, truncate=False):
         mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (db_user, db_password, db_host, db_port, db_name)
         try:
-            self.engine = pymongo.MongoClient(mongo_uri)
-        except pymongo.errors.ConfigurationError as e:
-            self.engine = pymongo.MongoClient(db_host, db_port)
+            self.engine = MongoClient(mongo_uri)
+        except ConfigurationError as e:
+            self.engine = MongoClient(db_host, db_port)
         except ConnectionFailure as e:
             log.error('can not connect to database server %s' % e)
             exit(-1)
@@ -196,25 +120,24 @@ class Persistent(object):
         self.database = self.engine[db_name]
 
         self.messages = self.database['messages']
-        self.__create_index(self.messages, 'sn_id', pymongo.ASCENDING, True)
-        self.__create_index(self.messages, 'user', pymongo.ASCENDING, False)
+        self.__create_index(self.messages, 'sn_id', ASCENDING, True)
+        self.__create_index(self.messages, 'user', ASCENDING, False)
         self.__create_index(self.messages, 'text', 'text', False, language_override='lang')
 
         self.users = self.database['users']
-        self.__create_index(self.users, 'sn_id', pymongo.ASCENDING, True)
-        self.__create_index(self.users, 'screen_name', pymongo.ASCENDING, False)
+        self.__create_index(self.users, 'sn_id', ASCENDING, True)
+        self.__create_index(self.users, 'screen_name', ASCENDING, False)
 
         self.social_objects = self.database['social_objects']
-        self.__create_index(self.social_objects, 'sn_id', pymongo.ASCENDING, True)
+        self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
 
         self.not_loaded_users = self.database['not_loaded_users']
-        # self.__create_index(self.not_loaded_users, 'sn_id', pymongo.ASCENDING, True)
 
         self.relations_metadata = self.database['relations_metadata']
-        self.__create_index(self.relations_metadata, 'relations_of', pymongo.ASCENDING, True)
+        self.__create_index(self.relations_metadata, 'relations_of', ASCENDING, True)
 
         self.extended_user_info = self.database['extended_user_info']
-        self.__create_index(self.extended_user_info, 'user_id', pymongo.ASCENDING, True)
+        self.__create_index(self.extended_user_info, 'user_id', ASCENDING, True)
 
         self.redis = RedisBaseMixin(truncate)
 
@@ -369,7 +292,8 @@ class Persistent(object):
         return self.redis.get_count(from_id, relations_type)
 
     def get_relations_update_time(self, from_id, relation_type):
-        result = self.relations_metadata.find_one({'relations_of': self.redis.get_list_name(from_id, relation_type)})
+        result = self.relations_metadata.find_one(
+            {'relations_of': self.redis.form_relations_list_name(from_id, relation_type)})
         if result:
             return result.get('update_date')
         return None
@@ -398,7 +322,6 @@ class Persistent(object):
             to_save = saved
             to_save['update_date'] = datetime.now()
             to_save.update(extended_info)
-
         else:
             to_save = extended_info
             to_save['update_date'] = datetime.now()
@@ -412,15 +335,20 @@ class Persistent(object):
         params.update(kwargs)
         return self.extended_user_info.find_one(params)
 
+    def save_path(self, elements):
+        if isinstance(elements, list) and len(elements) > 1:
+            self.redis.save_path(elements)
+
+    def get_path(self, from_, to_):
+        return self.redis.get_path(from_, to_)
+
+    def remove_path(self, from_, to_):
+        self.redis.remove_path(from_, to_)
+
 
 if __name__ == '__main__':
-    import random
-    from datetime import datetime
+    db = Persistent()
+    db.save_path([1,3,4,5,6,7,8])
+    db.save_path([1,3,4,5,6])
+    db.get_path(1,6)
 
-    r = RedisBaseMixin(truncate=True)
-
-    r.save_relations(1, [random.randint(0, 1000) for el in range(10)], 'friends')
-    print r.get_count(1, 'friends')
-    print r.get_rels(1, 'friends')
-    print r.get_rels_and_remove(1, 'friends')
-    print r.get_rels(1, 'friends')
