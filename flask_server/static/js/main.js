@@ -1,3 +1,8 @@
+function get_sn_swithcers(){
+    //returning sithcers on which social net i must search
+}
+
+
 function generateUUID() {
     var d = new Date().getTime();
     var uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -8,7 +13,8 @@ function generateUUID() {
     return uuid;
 }
 
-function sendResultFeedback(result_id, feedback) {
+
+    function sendResultFeedback(result_id, feedback) {
     $.ajax({
         url: '/process_search/' + result_id,
         method: 'POST',

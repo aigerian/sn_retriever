@@ -111,7 +111,7 @@ class __TTR_API(object):
         while True:
             cred_number, wait_time = self.limit_handler.get_credentials_number(request_name)
             try:
-                log.info('send_request:  %s %s [%s]' % (request_name, str(kwargs), wait_time))
+                log.debug('send_request:  %s %s [%s]' % (request_name, str(kwargs), wait_time))
                 callback.im_self._client = self._form_new_client(cred_number, use_proxy)
                 time.sleep(wait_time)
                 request_time = datetime.now()

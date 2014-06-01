@@ -105,7 +105,9 @@ class TTR_Graph(nx.DiGraph):
     def shortest_path(self, from_screen_name, to_screen_name):
         f, t = self.__get_user_node(from_screen_name), self.__get_user_node(to_screen_name)
         try:
+
             result = nx.shortest_path(self, f.get('sn_id'), t.get('sn_id'))
+            self.persistent.save_path(result)
             return result
         except NetworkXNoPath as e:
             return None
