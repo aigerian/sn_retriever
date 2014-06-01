@@ -50,15 +50,6 @@ split_reg = re.compile(u'[^a-zA-Z0-9а-яёА-ЯЁ@#\*_-]+')
 
 
 
-def test(n):
-    for i in range(n):
-        j = i * i
-        x = []
-        x.append(j)
-        y = {}
-        y[i] = x[:]
-
-
 if __name__ == '__main__':
     ttr = __TTR_API()
     result = [el['text'] for el in ttr.search(u'чеснок')]

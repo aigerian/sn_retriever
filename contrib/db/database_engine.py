@@ -1,19 +1,9 @@
 #coding: utf-8
-from datetime import datetime
-from urllib import addbase
-from bson import DBRef, ObjectId
 from contrib.api.entities import APIUser, APIMessage
-from contrib.db import DataBase
-from itsdangerous import _CompactJSON
 
-from neo4jrestclient.client import GraphDatabase, IndexKey, Node, Relationship
-from neo4jrestclient.exceptions import TransactionException
-from neo4jrestclient.utils import text_type
 import redis
 
 __author__ = '4ikist'
-
-import logging
 
 import pymongo
 from pymongo.errors import ConnectionFailure, DuplicateKeyError
@@ -133,7 +123,7 @@ class RedisBaseMixin(object):
         list_name = self.get_list_name(from_, rel_type)
         if isinstance(to_, list):
             for i in xrange((len(to_) / redis_batch_size) + 1):
-                log.info("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
+                log.debug("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
                 self.engine.rpush(list_name,
                                   *to_[i * redis_batch_size:(i + 1) * redis_batch_size])
         else:
@@ -222,6 +212,9 @@ class Persistent(object):
 
         self.relations_metadata = self.database['relations_metadata']
         self.__create_index(self.relations_metadata, 'relations_of', pymongo.ASCENDING, True)
+
+        self.extended_user_info = self.database['extended_user_info']
+        self.__create_index(self.extended_user_info, 'user_id', pymongo.ASCENDING, True)
 
         self.redis = RedisBaseMixin(truncate)
 
@@ -388,7 +381,7 @@ class Persistent(object):
         """
         assert sn_id is not None
         object_data['update_date'] = datetime.now()
-        log.info('saving object: [%s]\n%s' % (object_data.get('screen_name') or sn_id, object_data))
+        log.debug('saving object: [%s]\n%s' % (object_data.get('screen_name') or sn_id, object_data))
         founded_user = sn_object.find_one({'sn_id': sn_id})
         if founded_user:
             founded_user = dict(founded_user)
@@ -398,6 +391,26 @@ class Persistent(object):
         else:
             result = sn_object.save(object_data)
         return result
+
+    def save_extended_user_info(self, user_id, extended_info):
+        saved = self.extended_user_info.find_one({'user_id': user_id})
+        if saved:
+            to_save = saved
+            to_save['update_date'] = datetime.now()
+            to_save.update(extended_info)
+
+        else:
+            to_save = extended_info
+            to_save['update_date'] = datetime.now()
+            to_save['user_id'] = user_id
+        self.extended_user_info.save(to_save)
+
+    def get_extended_user_info(self, user_id=None, **kwargs):
+        params = {}
+        if user_id:
+            params['user_id'] = user_id
+        params.update(kwargs)
+        return self.extended_user_info.find_one(params)
 
 
 if __name__ == '__main__':

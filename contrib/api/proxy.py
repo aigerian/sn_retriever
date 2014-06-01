@@ -4,8 +4,9 @@ import time
 import urllib2
 
 import requests
-from lxml import html
+#from lxml import html
 import properties
+
 
 
 log = properties.logger.getChild('proxy')
@@ -31,7 +32,7 @@ def local_load():
     return proxies
 
 
-def ssl_load():
+def ssl_load(html=None):
     proxies = []
     s = requests.Session()
     try:
@@ -50,7 +51,7 @@ def ssl_load():
     return proxies
 
 
-def simple_load():
+def simple_load(html=None):
     s = requests.Session()
     proxies = []
     try:
@@ -68,7 +69,7 @@ def simple_load():
     return proxies
 
 
-def xroxy_load():
+def xroxy_load(html=None):
     s = requests.Session()
     proxies = []
     for i in range(0, 10):

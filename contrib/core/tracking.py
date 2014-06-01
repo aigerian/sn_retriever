@@ -2,7 +2,7 @@
 __author__ = '4ikist'
 
 find_states = ['find_before_crossing', 'find_after_crossing']
-import numpy as np
+
 
 class TTR_Tracking(object):
     def __init__(self, api, db):

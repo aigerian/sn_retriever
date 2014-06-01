@@ -1,5 +1,4 @@
 from collections import Counter
-from bson import ObjectId
 from contrib.api.entities import APIUser
 from contrib.api.ttr import __TTR_API
 from contrib.core.tracking import TTR_Tracking
@@ -161,10 +160,10 @@ def get_params_for_db(user):
         params['screen_name'] = user
     elif isinstance(user, int):
         params['sn_id'] = user
-    elif isinstance(user, ObjectId):
-        params['_id'] = str(user)
     elif isinstance(user, APIUser):
         return {'sn_id': user.get('sn_id')}
+    else:
+        params['_id'] = str(user)
     return params
 
 
@@ -268,7 +267,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
                 not_in_db_users.append(user_name)
             else:
                 result.append(user)
-        if self.api:
+        if self.api and len(not_in_db_users):
             retrieved,_ = self.api.get_users(screen_names=not_in_db_users)
             for user in retrieved:
                 self.database.save_user(user)
@@ -282,12 +281,12 @@ class TTR_Characterisitcs(BaseCharacteristics):
         mentions = []
         for el in messages:
             for mention in el.get('entities').get('user_mentions'):
-                mention_screen_name = mention.get('screen_name')
+                mention_screen_name = mention.get('screen_name').lower()
                 mentions.append(mention_screen_name)
         result = Counter(mentions)
         if not only_names:
             loaded_users = self.__get_users(result.keys())
-            return Counter({el: result.get(el.screen_name) for el in loaded_users})
+            return Counter({el: result.get(el.screen_name.lower()) for el in loaded_users})
         return result
 
     def real_name(self, user):

@@ -9,9 +9,7 @@ url_reg = re.compile(
 split_reg = re.compile(u'[^a-zA-Z0-9а-яёА-ЯЁ@#\*_-]+')
 
 
-def process_message(message, n=1, ttr_tooltip=None):
-    if ttr_tooltip:
-        pass
+def process_message(message):
     worked_copy = message[:]
     urls = [el[0] for el in url_reg.findall(message)]
     c = 0

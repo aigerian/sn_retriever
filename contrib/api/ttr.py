@@ -111,7 +111,7 @@ class __TTR_API(object):
         while True:
             cred_number, wait_time = self.limit_handler.get_credentials_number(request_name)
             try:
-                log.info('send_request:  %s %s [%s]' % (request_name, str(kwargs), wait_time))
+                log.debug('send_request:  %s %s [%s]' % (request_name, str(kwargs), wait_time))
                 callback.im_self._client = self._form_new_client(cred_number, use_proxy)
                 time.sleep(wait_time)
                 request_time = datetime.now()
@@ -261,7 +261,8 @@ class __TTR_API(object):
             else:
                 break
 
-    def search(self, q, until=None, result_type='recent', lang='ru', geocode=None, max_id=None, count_iterations=10):
+    def search(self, q, until=None, result_type='recent', lang='ru', geocode=None, max_id=None, count_iterations=10,
+               batch_count=10):
         iteration = 0
         while iteration <= count_iterations:
             iteration += 1
@@ -280,8 +281,13 @@ class __TTR_API(object):
             response = self.__get_data(self.client.api.search.tweets.get, **params)
             if response and len(response.data.statuses):
                 max_id = response.data.statuses[-1][u'id']
-                for el in response.data.statuses:
-                    yield self._form_message(el)
+                if batch_count:
+                    for i in range(len(response.data.statuses), step=batch_count):
+                        yield [self._form_message(el) for el in i] #forelini%))))))
+                else:
+                    for el in response.data.statuses:
+                        yield self._form_message(el)
+
                 if len(response.data.statuses) < 99:
                     break
             else:
@@ -299,8 +305,9 @@ class __TTR_API(object):
 api = __TTR_API()
 
 
-def get_api():
-    return api
+def get_api(api_name='ttr'):
+    if not api_name or api_name =='ttr':
+        return api
 
 
 if __name__ == '__main__':
