@@ -14,8 +14,10 @@ class Worker(threading.Thread):
         self.result_object = None
 
     def run(self):
+        print self.method_kwargs
         result = self.method(**self.method_kwargs)
         self.result_object = result
+        print 'ready!\n%s\n%s' % (self.method, self.result_object)
 
     @property
     def result(self):
@@ -36,7 +38,7 @@ class ThreadHandler(object):
     def is_ready(self, identity):
         w = self.workers.get(identity)
         if not w:
-            raise Exception('not found worker %s'%identity)
+            raise Exception('not found worker %s' % identity)
         return not w.isAlive()
 
     def get_result(self, identity):
@@ -46,6 +48,7 @@ class ThreadHandler(object):
         result = worker.result
         del self.workers[identity]
         return result
+
 
 if __name__ == '__main__':
     h = ThreadHandler()

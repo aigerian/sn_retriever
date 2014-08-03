@@ -1,7 +1,4 @@
-__author__ = '4ikist'
-
-
-from properties import *
+from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields
 from contrib.api.entities import API, APIException
 
 import json
@@ -11,6 +8,8 @@ import urlparse
 
 from lxml import html
 import requests
+
+__author__ = '4ikist'
 
 class VK_API(API):
     def __init__(self):
@@ -167,4 +166,5 @@ class VK_API(API):
 
 if __name__ == '__main__':
     vk = VK_API()
-    vk.get_user(user_id=123)
+    user = vk.get_user(user_id=123)
+    print user

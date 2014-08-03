@@ -1,11 +1,13 @@
 #coding: utf-8
 
 from datetime import datetime
+import json
 from bson import DBRef
 from contrib.api.entities import APIUser, APIMessage
 from pymongo import MongoClient, ASCENDING
 
-from pymongo.errors import ConnectionFailure, DuplicateKeyError, ConfigurationError
+import networkx as nx
+from pymongo.errors import ConnectionFailure, ConfigurationError
 import redis
 
 from properties import *
@@ -30,6 +32,172 @@ class DataBaseRelationException(Exception):
 class DataBaseUserException(Exception):
     pass
 
+
+class RGP_Node_Exception(Exception):
+    pass
+
+
+from_name = lambda x: '%s>' % x
+to_name = lambda x: '%s<' % x
+ref_name = lambda f, t, tp: '%s>%s(%s)' % (f, t, tp)
+gfn = lambda x: x[0:x.index('>')]
+gtn = lambda x: x[x.index('>') + 1: x.index('(')]
+
+
+class RedisGraphPersistent(nx.DiGraph):
+    def __init__(self, graph_name, truncate=False, **attr):
+        super(RedisGraphPersistent, self).__init__(**attr)
+        self.graph_name = graph_name
+        self.engine = redis.StrictRedis(host=redis_host, port=redis_host, db=1)
+        if truncate:
+            self.engine.flushdb()
+
+    def nodes_iter(self,data=False):
+        nodes = self.engine.smembers('%s_nodes'%self.graph_name)
+        for el in nodes:
+            if not data:
+                yield el
+            else:
+                yield self._get_data(el)
+
+    def degree(self, nbunch=None, weight=None):
+        return super(RedisGraphPersistent, self).degree(nbunch, weight)
+
+    def degree_iter(self, nbunch=None, weight=None):
+        pass
+
+    def subgraph(self, nbunch):
+        return super(RedisGraphPersistent, self).subgraph(nbunch)
+
+    def has_edge(self, u, v):
+        return super(RedisGraphPersistent, self).has_edge(u, v)
+
+    def number_of_nodes(self):
+        return super(RedisGraphPersistent, self).number_of_nodes()
+
+    def remove_edge(self, u, v):
+        return super(RedisGraphPersistent, self).remove_edge(u, v)
+
+    def remove_edges_from(self, ebunch):
+        super(RedisGraphPersistent, self).remove_edges_from(ebunch)
+
+    def out_degree(self, nbunch=None, weight=None):
+        return super(RedisGraphPersistent, self).out_degree(nbunch, weight)
+
+    def in_edges(self, nbunch=None, data=False):
+        return super(RedisGraphPersistent, self).in_edges(nbunch, data)
+
+    def add_edge(self, u, v, attr_dict=None, **attr):
+        return super(RedisGraphPersistent, self).add_edge(u, v, attr_dict, **attr)
+
+    def neighbors_iter(self, n):
+        return super(RedisGraphPersistent, self).neighbors_iter(n)
+
+    def remove_node(self, n):
+        return super(RedisGraphPersistent, self).remove_node(n)
+
+    def is_directed(self):
+        return super(RedisGraphPersistent, self).is_directed()
+
+    def clear(self):
+        super(RedisGraphPersistent, self).clear()
+
+    def is_multigraph(self):
+        return super(RedisGraphPersistent, self).is_multigraph()
+
+    def has_successor(self, u, v):
+        return super(RedisGraphPersistent, self).has_successor(u, v)
+
+    def get_edge_data(self, u, v, default=None):
+        return super(RedisGraphPersistent, self).get_edge_data(u, v, default)
+
+    def add_path(self, nodes, **attr):
+        super(RedisGraphPersistent, self).add_path(nodes, **attr)
+
+    def has_node(self, n):
+        return super(RedisGraphPersistent, self).has_node(n)
+
+    def has_predecessor(self, u, v):
+        return super(RedisGraphPersistent, self).has_predecessor(u, v)
+
+    def size(self, weight=None):
+        return super(RedisGraphPersistent, self).size(weight)
+
+    def number_of_edges(self, u=None, v=None):
+        return super(RedisGraphPersistent, self).number_of_edges(u, v)
+
+    def in_degree_iter(self, nbunch=None, weight=None):
+        return super(RedisGraphPersistent, self).in_degree_iter(nbunch, weight)
+
+    def neighbors(self, n):
+        return super(RedisGraphPersistent, self).neighbors(n)
+
+    def adjacency_list(self):
+        return super(RedisGraphPersistent, self).adjacency_list()
+
+    def to_directed(self):
+        return super(RedisGraphPersistent, self).to_directed()
+
+    def remove_nodes_from(self, nbunch):
+        super(RedisGraphPersistent, self).remove_nodes_from(nbunch)
+
+    def add_nodes_from(self, nodes, **attr):
+        super(RedisGraphPersistent, self).add_nodes_from(nodes, **attr)
+
+    def out_degree_iter(self, nbunch=None, weight=None):
+        return super(RedisGraphPersistent, self).out_degree_iter(nbunch, weight)
+
+    def in_edges_iter(self, nbunch=None, data=False):
+        if isinstance(nbunch, str):
+            return self.predecessors_iter(nbunch)
+
+    def add_node(self, n, attr_dict=None, **attr):
+        self._save_data(n, attr_dict if attr_dict else {})
+        return super(RedisGraphPersistent, self).add_node(n, attr_dict, **attr)
+
+
+    def _save_data(self, name, dict):
+        for k, v in dict.iteritems():
+            self.engine.hset(name, k, json.dumps(v))
+
+    def _get_data(self, name):
+        result = self.engine.hgetall(name)
+        return_obj = {}
+
+        for i in xrange(len(result)):
+            #field name
+            if i % 2:
+                return_obj[result[i]] = result[i + 1]
+
+        return return_obj
+
+
+    def save_node(self, node_data):
+        if node_data.get('name', None) is None:
+            raise RGP_Node_Exception('must be name in your node data:\n%s' % node_data)
+        name = node_data.get('name')
+        #for graph
+        self.engine.sadd('%s_nodes'%self.graph_name,name)
+        self._save_data(name, node_data)
+
+    def save_ref(self, from_node_name, to_node_name, ref_type, ref_data=None):
+        f, t, r_n = from_name(from_node_name), to_name(to_node_name), ref_name(from_node_name, to_node_name, ref_type)
+        self._save_data(r_n, ref_data if ref_data else {})
+        self.engine.sadd(f, r_n)
+        self.engine.sadd(t, r_n)
+
+    def predecessors_iter(self, n):
+        for el in [gtn(el) for el in self.engine.smembers(from_name(n))]:
+            yield el
+
+    def successors_iter(self, n):
+        for el in [gfn(el) for el in self.engine.smembers(to_name(n))]:
+            yield el
+
+    def get_shortest_path(self, from_node, to_node):
+        print 'evaluating shortest path between %s -> %s'%(from_node,to_node)
+        result = nx.shortest_path(self,from_node,to_node)
+        return result
 
 class RedisBaseMixin(object):
     def __init__(self, truncate=False):
@@ -56,27 +224,28 @@ class RedisBaseMixin(object):
         return list_name
 
 
-    def get_rels(self, from_, rel_type):
+    def get_relations(self, from_, rel_type):
         return self.engine.lrange(self.form_relations_list_name(from_, rel_type), 0, -1)
 
     def get_count(self, from_, rel_type):
         return self.engine.llen(self.form_relations_list_name(from_, rel_type))
 
-    def get_rels_and_remove(self, from_, rel_type):
+    def get_relations_and_remove(self, from_, rel_type):
         list_name = self.form_relations_list_name(from_, rel_type)
         result = self.engine.lrange(list_name, 0, -1)
         self.engine.ltrim(list_name, 0, 0)
         self.engine.lpop(list_name)
         return result
 
-    def remove_rel(self, from_, rel_type, to_):
+    def remove_relation(self, from_, rel_type, to_):
         list_name = self.form_relations_list_name(from_, rel_type)
         self.engine.lrem(list_name, 0, to_)
         return list_name
 
     def save_path(self, elements):
         p_name = self.form_path_list_name(elements[0], elements[-1])
-        self.engine.hmset(p_name, dict(enumerate(elements)))
+        print p_name
+        self.engine.rpush(p_name, *elements)
         return p_name
 
     def get_path(self, from_, to_):
@@ -139,6 +308,13 @@ class Persistent(object):
         self.extended_user_info = self.database['extended_user_info']
         self.__create_index(self.extended_user_info, 'user_id', ASCENDING, True)
 
+        self.changes = self.database['user_changes']
+        self.__create_index(self.changes, 'sn_id', ASCENDING, False)
+        self.__create_index(self.changes, 'datetime', ASCENDING, False)
+
+        self.deleted_users = self.database['deleted_users']
+        self.__create_index(self.deleted_users, 'sn_id', ASCENDING, True)
+
         self.redis = RedisBaseMixin(truncate)
 
         if truncate:
@@ -147,16 +323,34 @@ class Persistent(object):
             self.social_objects.remove()
             self.not_loaded_users.remove()
             self.relations_metadata.remove()
+            self.changes.remove()
+            self.deleted_users.remove()
+
+    def add_deleted_user(self, user_sn_id):
+        found = self.deleted_users.find_one({'sn_id':user_sn_id})
+        if not found:
+            self.deleted_users.save({'sn_id':user_sn_id})
+
+    def save_user_changes(self, changes):
+        assert changes.get('sn_id')
+        assert changes.get('datetime')
+        self.changes.save(changes)
+
+    def update_user_date(self, user_sn_id):
+        self.users.update({'sn_id':user_sn_id},{'$set':{'update_date':datetime.now()}})
 
     def get_user_ref(self, user):
         return DBRef(self.users.name, user.get('_id'))
 
     def get_users(self, parameter=None):
+        return [list(self.get_users_iter(parameter))]
+
+    def get_users_iter(self, parameter=None):
         if parameter and isinstance(parameter, dict) and parameter.get('screen_name'):
             parameter['screen_name'] = parameter.get('screen_name').lower()
-
         users = self.users.find(parameter)
-        return [APIUser(el, from_db=True) for el in users]
+        for el in users:
+            yield APIUser(el, from_db=True)
 
     def get_user(self, _id=None, sn_id=None, screen_name=None, use_as_cache=False):
         """
@@ -170,7 +364,8 @@ class Persistent(object):
         elif sn_id:
             request_params['sn_id'] = sn_id
         elif screen_name:
-            request_params['screen_name'] = screen_name[1:].lower() if '@' == screen_name[0] else screen_name.lower()
+            request_params['screen_name'] = screen_name[1:].lower() if '@' == screen_name[
+                0] else screen_name.lower()
         else:
             return None
         user = self.users.find_one(request_params)
@@ -242,7 +437,7 @@ class Persistent(object):
         return result
 
     def retrieve_relations_for_diff(self, from_id, relation_type):
-        result = [int(el) for el in self.redis.get_rels_and_remove(from_id, relation_type)]
+        result = [int(el) for el in self.redis.get_relations_and_remove(from_id, relation_type)]
         return result
 
     def save_relations_for_diff(self, from_id, new_relation_set, relation_type):
@@ -257,7 +452,7 @@ class Persistent(object):
         self.update_relations_metadata(list_name)
 
     def remove_relation(self, from_id, to_id, relation_type):
-        list_name = self.redis.remove_rel(from_id, relation_type, to_id)
+        list_name = self.redis.remove_relation(from_id, relation_type, to_id)
         self.update_relations_metadata(list_name)
 
     def update_relations_metadata(self, metadata_name):
@@ -275,7 +470,7 @@ class Persistent(object):
         :param result_key - key of user if None - user object
         :returns related users which related from or to or some user's element (retrieve by param: result_key)
         """
-        refs = self.redis.get_rels(from_id, relation_type)
+        refs = self.redis.get_relations(from_id, relation_type)
         result = []
         for el in refs:
             if only_sn_ids:
@@ -348,7 +543,7 @@ class Persistent(object):
 
 if __name__ == '__main__':
     db = Persistent()
-    db.save_path([1,3,4,5,6,7,8])
-    db.save_path([1,3,4,5,6])
-    db.get_path(1,6)
+    db.save_path([1, 3, 4, 5, 6, 7, 8])
+    db.save_path([1, 3, 4, 5, 6])
+    db.get_path(1, 6)
 

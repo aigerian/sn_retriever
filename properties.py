@@ -8,7 +8,6 @@ __author__ = '4ikist'
 
 import logging
 import sys
-
 import os
 
 
@@ -33,7 +32,7 @@ fb_client_token = '655cffd14ae5a391b89197e3e5dc3e12'
 fb_user_email = 'alexey.proskuryakov@gmail.com'
 fb_user_pass = 'sederfes_fb#'
 
-#ttr application credentials
+#данные для твитера
 #linoleum2k12 / aspiranture_ttr!
 #sederfes / sederfes100500 / stack2008@gmail.com
 #pramen2 / sederfes100500 / pramen.toramen@gmail.com
@@ -118,7 +117,6 @@ ttr_access_tokens_secret = {1: 'H9dfxvLnxT9HGw7PH2NQsBAKbup1qEgz81UrURqAeCkaA',
                             17: 'X547yZFFIjxeqabfo2fCjqB4pceSvNdFv4WkLz3UnjcJs'
 }
 
-
 def get_ttr_credentials(number):
     return {'consumer_key': ttr_consumer_keys[number],
             'consumer_secret': ttr_consumers_secret[number],
@@ -144,7 +142,7 @@ vk_access_credentials = {'client_id': '3784486',
 vk_edit_app_url = 'https://vk.com/editapp?id=3784486&section=options'
 
 
-#log file
+#настройки логирования
 log_file = os.path.join(module_path(), 'result.log')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -155,46 +153,35 @@ fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 logger.addHandler(fh)
 logger.addHandler(ch)
+logging.getLogger('requests.packages.urllib3.connectionpool').propagate = False
 
-
-#db_connection (mongo hq)
-#db_port = 10060
-#db_host = 'alex.mongohq.com'
-#db_name = 'ttr'
-#db_user = '4ikist'
-#db_password = 'sederfes'
-
+#данные для подключения к mongo (основная БД)
 db_port = 27017
 db_host = 'localhost'
 db_name = 'ttr'
 db_user = '4ikist'
 db_password = 'sederfes'
 
-#db_connection (mongo lab)
-# db_port = 37518
-# db_host = 'ds037518.mongolab.com'
-# db_name = 'ttr'
-# db_user = '4ikist'
-# db_password = 'sederfes'
+#данные для подключения redis (связи)
+redis_host = '127.0.0.1'
+redis_port = 6379
+redis_batch_size = 185000
 
-#neo4j params
-gdb_host = 'http://localhost:7474/db/data'
-gdb_path = 'C:\Users\4ikist\Documents\Neo4j\default.graphdb'
 #dictionaries for pymorphy
 dicts_path = os.path.join(os.path.dirname(__file__), 'dicts', 'ru', 'morphs.pickle')
 
 queue_host = 'localhost'
 queue_name = 'sn_queue'
 
+#место где лежит прокси лист
 local_proxy_list = os.path.join(os.path.dirname(__file__), 'proxy_list')
 
 
 ###############################################
-#время в течении которого не будет обновлятся данные в БД
-user_cache_time = 3600
-message_cache_time = 100
-relation_cache_time = 360000
+#время в течении которого не будет обновлятся данные в БД (в секундах)
+user_cache_time = 3600 * 24 * 7
+message_cache_time = 3600 * 24
+relation_cache_time = 3600 * 24 * 7
+#время через которое будет обновлятся информация о пользователе (tracker)
+update_iteration_time = 3600 * 24 * 7
 
-redis_host = 'localhost'
-redis_port = 6379
-redis_batch_size = 185000

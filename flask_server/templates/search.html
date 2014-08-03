@@ -30,7 +30,7 @@
         <input type="checkbox" name="fb" value="fb" id='fb' checked="false" disabled> Facebook<br>
         <input type="checkbox" name="vk" value="vk" id='vk' checked="false" disabled> Vkontakte<br>
     </div>
-    <form id="retrieve_user_form" action="/retrieve" method="post">
+    <form id="retrieve_user_form" action="/retrieve_user" method="post">
         <h4>Введите ник пользователя</h4>
         <input type="text" name="screen_name" id='retrieve_user_form_input'>
         <input type="submit" value="Поиск" id='retrieve_user_form_submit'>
@@ -42,6 +42,8 @@
         <input type="submit" value="Поиск" id='search_form_submit'>
     </form>
 </div>
+
+    <!--<button class="btn btn-default" id='next_button'>Next!</button>  -->
 
 <div class='search_result_container' id='sr_container'>
 </div>

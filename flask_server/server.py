@@ -26,7 +26,6 @@ def main():
 @app.route('/retrieve_user', methods=['POST'])
 def retrieve_user():
     screen_name = request.form.get('screen_name')
-
     identity = server_helper.form_user(screen_name)
     return jsonify(identity=identity, success=True)
 
@@ -34,22 +33,30 @@ def retrieve_user():
 @app.route('/search', methods=['POST'])
 def search():
     query = request.form.get('query')
-
+    identity = server_helper.retrieve_search_result(query=query)
+    if not identity:
+        return jsonify(success=False)
     return jsonify(identity=identity, success=True)
 
 
-@app.route('/check_status/<identity>', methods=['POST'])
+@app.route('/check_status/<identity>', methods=['GET'])
 def check_status(identity):
-    result = api_th.is_ready(identity)
+    result = server_helper.is_ready(identity)
+    log.info('check status for: %s; status is: %s'%(identity,result))
+
     return jsonify(is_ended=result, success=True)
 
 
-@app.route('/get_result/<identity>', methods=['POST'])
-def get_result(identity):
-    result = api_th.get_result(identity)
-    if isinstance(result, APIUser):
-        persistent.save_user(result)
-        return jsonify(user_id=result.get('_id'), success=True)
+@app.route("/get_user_result/<identity>", methods=['GET'])
+def get_user_result(identity):
+    result = server_helper.get_user_result(identity)
+    return jsonify(result)
+
+
+@app.route("/get_search_result/<identity>", methods=['GET'])
+def get_search_result(identity):
+    result, next = server_helper.get_search_result(identity)
+    return jsonify(result=result, identity_next=next, success=True)
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+from copy import copy
 import random
 from datetime import datetime, timedelta
 import time
@@ -244,7 +245,7 @@ class __TTR_API(object):
         max_id = max_id
         while True:
             response = self.__get_data(self.client.api.statuses.user_timeline.get,
-                                       screen_name=user['screen_name'],
+                                       user_id=user.get('sn_id'),
                                        count=200,
                                        trim_user=True,
                                        include_rts=True,
@@ -280,15 +281,17 @@ class __TTR_API(object):
                 params['max_id'] = max_id
             response = self.__get_data(self.client.api.search.tweets.get, **params)
             if response and len(response.data.statuses):
-                max_id = response.data.statuses[-1][u'id']
+                statuses = copy(response.data.statuses)
+                max_id = statuses[-1][u'id']
                 if batch_count:
-                    for i in range(len(response.data.statuses), step=batch_count):
-                        yield [self._form_message(el) for el in i] #forelini%))))))
+                    for i in range(len(statuses)):
+                        yield [self._form_message(el) for el in statuses[i*batch_count:(i+1)*batch_count]] #forelini%))))))
                 else:
-                    for el in response.data.statuses:
+                    for el in statuses:
                         yield self._form_message(el)
-
-                if len(response.data.statuses) < 99:
+                statuses_len = len(statuses)
+                del statuses
+                if statuses_len < 99:
                     break
             else:
                 break
