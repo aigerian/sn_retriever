@@ -1,8 +1,7 @@
-from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields
+from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields, logger
 from contrib.api.entities import API, APIException
 
 import json
-import logging
 import re
 import urlparse
 
@@ -13,7 +12,7 @@ __author__ = '4ikist'
 
 class VK_API(API):
     def __init__(self):
-        self.log = logging.getLogger('VK_API')
+        self.log = logger.getChild('VK_API')
         self.access_token = self.__auth()
         self.base_url = 'https://api.vk.com/method/'
         self.array_item_process = lambda x: x[1:]
@@ -143,7 +142,6 @@ class VK_API(API):
         mentions = [el[1:-1] for el in prep]
         return mentions if len(mentions) > 0 else None
 
-
     def get_user(self, user_id):
         """
         :param user_id: can be one id or some string of user ids with separate  is ','
@@ -152,7 +150,8 @@ class VK_API(API):
         command = 'users.get'
         kwargs = {'user_ids': user_id, 'fields': vk_fields}
         result = self.get(command, **kwargs)
-        return result
+        #TODO  bdate (str to date), city, country, last_seen(time to date) and create normal user
+        return result[0]
 
     def search(self, q):
         """
@@ -166,5 +165,12 @@ class VK_API(API):
 
 if __name__ == '__main__':
     vk = VK_API()
-    user = vk.get_user(user_id=123)
-    print user
+    user = vk.get_user(user_id='dm')
+    uid = user.get('uid')
+    posts = vk.get_posts(uid)
+    # posts = vk.get_posts('dm')
+    # followers = vk.get_followers('dm')
+    followers = vk.get_followers(uid)
+
+
+    print posts

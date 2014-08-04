@@ -1,5 +1,6 @@
 # coding: utf-8
 import datetime
+import sys
 from time import sleep
 from contrib.api.ttr import get_api
 from contrib.db.database_engine import Persistent
@@ -19,12 +20,12 @@ __author__ = '4ikist'
 ttr = get_api('ttr')
 persist = Persistent()
 
-batch_count = 1000
 
 log = logger.getChild('walker_ttr')
 
+batch_count = 1000
 
-def get_observed_users_ids():
+def get_observed_users_ids(update_iteration_time):
     actual_date = datetime.datetime.now() - datetime.timedelta(seconds=update_iteration_time)
     result = {}
     for user_data in persist.get_users_iter({'update_date': {'$lte': actual_date}}):
@@ -54,8 +55,13 @@ def get_user_changes(user_data, fresh_user_data):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 2:
+        update_iteration_time = sys.argv[1]
+    else:
+        from properties import update_iteration_time
+
     while 1:
-        for user_data_batch in get_observed_users_ids():
+        for user_data_batch in get_observed_users_ids(update_iteration_time):
             users_datas,_ = ttr.get_users(user_data_batch.keys())
             for new_user_data in users_datas:
                 old_user_data = user_data_batch.pop(new_user_data.sn_id)
