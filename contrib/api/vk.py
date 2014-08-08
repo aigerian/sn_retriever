@@ -1,5 +1,7 @@
+# coding=utf-8
+import datetime
 from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields, logger
-from contrib.api.entities import API, APIException
+from contrib.api.entities import API, APIException, APIUser
 
 import json
 import re
@@ -18,7 +20,6 @@ class VK_API(API):
         self.array_item_process = lambda x: x[1:]
         self.array_count_process = lambda x: x[0]
 
-    #TODO some exception!
     def __auth(self):
         """
         authenticate in vk with dirty hacks
@@ -102,6 +103,11 @@ class VK_API(API):
         return result
 
     def get_posts(self, user_id):
+        """
+        Возвращает два списка: которые сделал сам юзер и те которые сделали ему.
+        :param user_id:
+        :return:
+        """
         command = 'wall.get'
         kwargs = {'owner_id': user_id, 'filter': 'all', }
         result = self.get_all(command,
@@ -109,7 +115,13 @@ class VK_API(API):
                               items_process=self.array_item_process,
                               count_process=self.array_count_process,
                               **kwargs)
-        return result
+        owners, others = [],[]
+        for el in result:
+            if el.get('from_id') == user_id:
+                owners.append(el)
+            else:
+                others.append(el)
+        return owners, others
 
     def get_notes(self, user_id):
         command = 'notes.get'
@@ -121,20 +133,31 @@ class VK_API(API):
                               **kwargs)
         return result
 
-    def get_post_comments(self, post_id, owner_id):
+    def get_post_comments(self, post_id):
         """
         :param post_id: the identification of post from wall of user who have -
         :param owner_id: this id
         :return: array of comments with who, when and text information
         """
         command = 'wall.getComments'
-        kwargs = {'owner_id': owner_id, 'post_id': post_id, 'need_likes': 1, 'sort': 'asc', 'preview_length': '0'}
+        kwargs = {'post_id': post_id, 'need_likes': 1, 'sort': 'asc', 'preview_length': '0'}
         result = self.get_all(command,
                               batch_size=100,
                               items_process=self.array_item_process,
                               count_process=self.array_count_process,
                               **kwargs)
         return result
+
+    def get_post_likers_ids(self, post_id):
+        command = 'wall.getLikes'
+        kwargs = {'post_id':post_id,}
+        result = self.get_all(command,
+                              batch_size=1000,
+                              items_process=self.array_item_process,
+                              count_process=self.array_count_process,
+                              **kwargs)
+        return result
+
 
     @staticmethod
     def retrieve_mentions(text):
@@ -150,8 +173,18 @@ class VK_API(API):
         command = 'users.get'
         kwargs = {'user_ids': user_id, 'fields': vk_fields}
         result = self.get(command, **kwargs)
-        #TODO  bdate (str to date), city, country, last_seen(time to date) and create normal user
-        return result[0]
+        user = VK_APIUser(result[0])
+        return user
+
+    def get_users(self, uids):
+        command= 'getProfiles'
+        users = []
+        for i in xrange((len(uids)/1000)+1):
+            kwargs = {'uids':','.join([str(el) for el in uids[i*1000:(i+1)*1000]]), 'fields': vk_fields}
+            result = self.get(command, **kwargs)
+            for el in result:
+                users.append(VK_APIUser(el))
+        return users
 
     def search(self, q):
         """
@@ -163,14 +196,34 @@ class VK_API(API):
         result = self.get(command, **kwargs)
         return result[1:]
 
+class VK_APIUser(APIUser):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        data_dict['sn_id'] = data_dict.pop('uid')
+        if data_dict.get('bdate'):
+            bdate = data_dict.get('bdate')
+            if len(bdate) > 4:
+                data_dict['bdate'] = datetime.datetime.strptime(bdate,'%d.%m.%Y')
+        if data_dict.get('last_seen'):
+            data_dict['last_seen'] = datetime.datetime.fromtimestamp(data_dict['last_seen']['time'])
+        if data_dict.get('counters'):
+            counters = data_dict.get('counters')
+            data_dict['followers_count'] = counters['followers']
+            data_dict['friends_count'] = counters['friends']
+        data_dict['name'] = data_dict['first_name']+' '+data_dict['last_name']
+
+        super(VK_APIUser, self).__init__(data_dict, created_at_format, from_db)
+
+
+
 if __name__ == '__main__':
     vk = VK_API()
-    user = vk.get_user(user_id='dm')
-    uid = user.get('uid')
-    posts = vk.get_posts(uid)
+    user = vk.get_user(user_id='pafnutij_akak')
+    users = vk.get_users(['from_to_where', 'dm', 512])
+    uid = user.sn_id
+    owners, others = vk.get_posts(uid)
     # posts = vk.get_posts('dm')
     # followers = vk.get_followers('dm')
-    followers = vk.get_followers(uid)
-
-
-    print posts
+    # followers = vk.get_followers(uid)
+    likers = vk.get_post_likers_ids(owners[0]['id'])
+    #comments = vk.get_post_comments('10130611_77')
+    # print likers, comments

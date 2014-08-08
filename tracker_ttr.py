@@ -56,7 +56,7 @@ def get_user_changes(user_data, fresh_user_data):
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:
-        update_iteration_time = sys.argv[1]
+        update_iteration_time = int(sys.argv[1])
     else:
         from properties import update_iteration_time
 

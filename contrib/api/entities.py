@@ -71,12 +71,7 @@ class APIException(Exception):
 
 class APISocialObject(dict):
     def __init__(self, data_dict, created_at_format=None, from_db=False):
-        data = dict(data_dict)
-        if not from_db:
-            data['sn_id'] = data.pop('id')
-            data['created_at'] = datetime.strptime(data['created_at'],
-                                                   created_at_format if created_at_format else '%a %b %d %H:%M:%S +0000 %Y')
-        super(APISocialObject, self).__init__(data)
+        super(APISocialObject, self).__init__(data_dict)
 
     def __hash__(self):
         return self.get('sn_id')

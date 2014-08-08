@@ -99,7 +99,7 @@ class __TTR_API(object):
         return APIMessage(message_data)
 
     def _form_user(self, user_data):
-        return APIUser(user_data)
+        return TTR_APIUser(user_data)
 
     def _form_new_client(self, credential_number, use_proxy=False):
         self.credential_number = credential_number
@@ -303,6 +303,15 @@ class __TTR_API(object):
         retweets = response.data
         for el in retweets:
             yield self._form_message(el)
+
+class TTR_APIUser(APIUser):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        data = dict(data_dict)
+        if not from_db:
+            data['sn_id'] = data.pop('id')
+            data['created_at'] = datetime.strptime(data['created_at'],
+                                                   created_at_format if created_at_format else '%a %b %d %H:%M:%S +0000 %Y')
+        super(TTR_APIUser, self).__init__(data, created_at_format, from_db)
 
 
 api = __TTR_API()

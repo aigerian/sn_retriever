@@ -130,7 +130,7 @@ vk_app_name = 'vk_retr'
 vk_login = '+79811064022'
 vk_pass = 'sederfes100500'
 
-vk_fields = 'nickname, screen_name, sex, bdate, city, country, timezone, has_mobile, contacts, education, online, counters, relation, last_seen, status, universities'
+vk_fields = 'connections, nickname, screen_name, sex, bdate, city, country, timezone, has_mobile, contacts, education, online, counters, relation, last_seen, status, universities'
 #vk helper...
 vk_access_credentials = {'client_id': '3784486',
                          'scope': 'friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
@@ -185,3 +185,4 @@ relation_cache_time = 3600 * 24 * 7
 #время через которое будет обновлятся информация о пользователе (tracker)
 update_iteration_time = 3600 * 24 * 7
 
+#
