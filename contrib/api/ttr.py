@@ -96,7 +96,7 @@ class __TTR_API(object):
         return function.im_self._path
 
     def _form_message(self, message_data):
-        return APIMessage(message_data)
+        return TTR_APIMessage(message_data)
 
     def _form_user(self, user_data):
         return TTR_APIUser(user_data)
@@ -312,6 +312,21 @@ class TTR_APIUser(APIUser):
             data['created_at'] = datetime.strptime(data['created_at'],
                                                    created_at_format if created_at_format else '%a %b %d %H:%M:%S +0000 %Y')
         super(TTR_APIUser, self).__init__(data, created_at_format, from_db)
+
+class TTR_APIMessage(APIMessage):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        data = dict(data_dict)
+        if not from_db:
+            retweet = data.get('retweeted_status')
+            if retweet:
+                retweet = dict(retweet)
+                rt_user = dict(retweet.get('user'))
+                rt_user = {'sn_id': rt_user.get('id')}
+                retweet['user'] = rt_user
+                data['retweeted_status'] = retweet
+            user = {'sn_id': data['user']['id']}
+            data['user'] = user
+        super(TTR_APIMessage, self).__init__(data, created_at_format, from_db)
 
 
 api = __TTR_API()

@@ -1,7 +1,7 @@
 # coding=utf-8
 import datetime
 from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields, logger
-from contrib.api.entities import API, APIException, APIUser
+from contrib.api.entities import API, APIException, APIUser, APIMessage
 
 import json
 import re
@@ -146,6 +146,7 @@ class VK_API(API):
                               items_process=self.array_item_process,
                               count_process=self.array_count_process,
                               **kwargs)
+        APIMessage()
         return result
 
     def get_post_likers_ids(self, post_id):
@@ -153,10 +154,10 @@ class VK_API(API):
         kwargs = {'post_id':post_id,}
         result = self.get_all(command,
                               batch_size=1000,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
+                              items_process=lambda x:x['users'],
+                              count_process=lambda x:x['count'],
                               **kwargs)
-        return result
+        return [el['uid'] for el in result]
 
 
     @staticmethod
@@ -213,6 +214,10 @@ class VK_APIUser(APIUser):
 
         super(VK_APIUser, self).__init__(data_dict, created_at_format, from_db)
 
+class TTR_APIMessage(APIMessage):
+    def __init__(self, data_dict, created_at_format=None, from_db=False):
+        user = {'sn_id':data_dict['uid']}
+        super(TTR_APIMessage, self).__init__(data_dict, created_at_format, from_db)
 
 
 if __name__ == '__main__':
@@ -225,5 +230,5 @@ if __name__ == '__main__':
     # followers = vk.get_followers('dm')
     # followers = vk.get_followers(uid)
     likers = vk.get_post_likers_ids(owners[0]['id'])
-    #comments = vk.get_post_comments('10130611_77')
+    comments = vk.get_post_comments(owners[0]['id'])
     # print likers, comments

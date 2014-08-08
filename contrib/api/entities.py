@@ -108,17 +108,6 @@ class APIUser(APISocialObject):
 
 class APIMessage(APISocialObject):
     def __init__(self, data_dict, created_at_format=None, from_db=False):
-        data = dict(data_dict)
-        if not from_db:
-            retweet = data.get('retweeted_status')
-            if retweet:
-                retweet = dict(retweet)
-                rt_user = dict(retweet.get('user'))
-                rt_user = {'sn_id': rt_user.get('id')}
-                retweet['user'] = rt_user
-                data['retweeted_status'] = retweet
-            user = {'sn_id': data['user']['id']}
-            data['user'] = user
-        super(APIMessage, self).__init__(data, created_at_format, from_db)
+        super(APIMessage, self).__init__(data_dict, created_at_format, from_db)
 
 
