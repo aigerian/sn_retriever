@@ -15,7 +15,8 @@ vk = VK_API()
 
 def persist_all_user_data_and_retrieve_friends_ids(user_id):
     user = vk.get_user(user_id)
-    persist.save_path(user)
+    persist.save_user(user)
+
 
 
 

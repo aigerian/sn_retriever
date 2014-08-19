@@ -285,7 +285,8 @@ class __TTR_API(object):
                 max_id = statuses[-1][u'id']
                 if batch_count:
                     for i in range(len(statuses)):
-                        yield [self._form_message(el) for el in statuses[i*batch_count:(i+1)*batch_count]] #forelini%))))))
+                        yield [self._form_message(el) for el in
+                               statuses[i * batch_count:(i + 1) * batch_count]]  # forelini%))))))
                 else:
                     for el in statuses:
                         yield self._form_message(el)
@@ -304,6 +305,7 @@ class __TTR_API(object):
         for el in retweets:
             yield self._form_message(el)
 
+
 class TTR_APIUser(APIUser):
     def __init__(self, data_dict, created_at_format=None, from_db=False):
         data = dict(data_dict)
@@ -313,27 +315,28 @@ class TTR_APIUser(APIUser):
                                                    created_at_format if created_at_format else '%a %b %d %H:%M:%S +0000 %Y')
         super(TTR_APIUser, self).__init__(data, created_at_format, from_db)
 
+
 class TTR_APIMessage(APIMessage):
-    def __init__(self, data_dict, created_at_format=None, from_db=False):
+    def __init__(self, data_dict, created_at_format=None):
         data = dict(data_dict)
-        if not from_db:
-            retweet = data.get('retweeted_status')
-            if retweet:
-                retweet = dict(retweet)
-                rt_user = dict(retweet.get('user'))
-                rt_user = {'sn_id': rt_user.get('id')}
-                retweet['user'] = rt_user
-                data['retweeted_status'] = retweet
-            user = {'sn_id': data['user']['id']}
-            data['user'] = user
-        super(TTR_APIMessage, self).__init__(data, created_at_format, from_db)
+        retweet = data.get('retweeted_status')
+        if retweet:
+            retweet = dict(retweet)
+            rt_user = dict(retweet.get('user'))
+            rt_user = {'sn_id': rt_user.get('id')}
+            retweet['user'] = rt_user
+            data['retweeted_status'] = retweet
+        user = {'sn_id': data['user']['id']}
+        data['user'] = user
+        data['sn_id'] = data.pop('id')
+        super(TTR_APIMessage, self).__init__(data)
 
 
 api = __TTR_API()
 
 
 def get_api(api_name='ttr'):
-    if not api_name or api_name =='ttr':
+    if not api_name or api_name == 'ttr':
         return api
 
 
@@ -343,15 +346,15 @@ if __name__ == '__main__':
     # medvedev = api.get_user(screen_name='medvedevRussia')
     # duty = db.get_duty({'work': 'medvedev_get_follwers'})
     # if duty:
-    #     cursor = duty['cursor']
+    # cursor = duty['cursor']
     # else:
-    #     cursor = -1
-    #     #friends_mdv = api.get_all_relations(medvedev, from_cursor=cursor)
+    # cursor = -1
+    # #friends_mdv = api.get_all_relations(medvedev, from_cursor=cursor)
     #
     # followers_mdv = api.get_all_relations(medvedev, relation_type='followers')
     #
     # def found_user(user_ids, api, db):
-    #     for user_ids_batch, cursor in user_ids:
+    # for user_ids_batch, cursor in user_ids:
     #         for user_id in user_ids_batch:
     #             user = api.get_user(user_id=str(user_id))
     #             if user:
@@ -370,6 +373,8 @@ if __name__ == '__main__':
     api = __TTR_API()
     # medved = api.get_user(screen_name = 'linoleum2k12')
     # followers,cursor = api.get_relation_ids(medved,relation_type='followers')
-    result = api.get_all_timeline({'screen_name': 'linoleum2k12'})
-    for el in result:
+    user = api.get_user(screen_name='linoleum2k12')
+    print user
+    timeline = api.get_all_timeline(user)
+    for el in timeline:
         print el

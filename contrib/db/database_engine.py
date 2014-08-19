@@ -1,4 +1,4 @@
-#coding: utf-8
+# coding: utf-8
 
 from datetime import datetime
 import json
@@ -52,8 +52,8 @@ class RedisGraphPersistent(nx.DiGraph):
         if truncate:
             self.engine.flushdb()
 
-    def nodes_iter(self,data=False):
-        nodes = self.engine.smembers('%s_nodes'%self.graph_name)
+    def nodes_iter(self, data=False):
+        nodes = self.engine.smembers('%s_nodes' % self.graph_name)
         for el in nodes:
             if not data:
                 yield el
@@ -177,7 +177,7 @@ class RedisGraphPersistent(nx.DiGraph):
             raise RGP_Node_Exception('must be name in your node data:\n%s' % node_data)
         name = node_data.get('name')
         #for graph
-        self.engine.sadd('%s_nodes'%self.graph_name,name)
+        self.engine.sadd('%s_nodes' % self.graph_name, name)
         self._save_data(name, node_data)
 
     def save_ref(self, from_node_name, to_node_name, ref_type, ref_data=None):
@@ -195,9 +195,10 @@ class RedisGraphPersistent(nx.DiGraph):
             yield el
 
     def get_shortest_path(self, from_node, to_node):
-        print 'evaluating shortest path between %s -> %s'%(from_node,to_node)
-        result = nx.shortest_path(self,from_node,to_node)
+        print 'evaluating shortest path between %s -> %s' % (from_node, to_node)
+        result = nx.shortest_path(self, from_node, to_node)
         return result
+
 
 class RedisBaseMixin(object):
     def __init__(self, truncate=False):
@@ -327,9 +328,9 @@ class Persistent(object):
             self.deleted_users.remove()
 
     def add_deleted_user(self, user_sn_id):
-        found = self.deleted_users.find_one({'sn_id':user_sn_id})
+        found = self.deleted_users.find_one({'sn_id': user_sn_id})
         if not found:
-            self.deleted_users.save({'sn_id':user_sn_id})
+            self.deleted_users.save({'sn_id': user_sn_id})
 
     def save_user_changes(self, changes):
         assert changes.get('sn_id')
@@ -337,7 +338,7 @@ class Persistent(object):
         self.changes.save(changes)
 
     def update_user_date(self, user_sn_id):
-        self.users.update({'sn_id':user_sn_id},{'$set':{'update_date':datetime.now()}})
+        self.users.update({'sn_id': user_sn_id}, {'$set': {'update_date': datetime.now()}})
 
     def get_user_ref(self, user):
         return DBRef(self.users.name, user.get('_id'))
@@ -400,20 +401,20 @@ class Persistent(object):
 
     def get_messages(self, parameter):
         result = self.messages.find(parameter).sort('created_at', -1)
-        result = [APIMessage(el, from_db=True) for el in result]
+        result = [APIMessage(el) for el in result]
         return result
 
     def get_message_last(self, user):
         result = list(self.messages.find({'user.$id': user.get('_id')}).sort('created_at', -1).limit(1))
         if len(result):
-            return APIMessage(result[0], from_db=True)
+            return APIMessage(result[0])
 
     def get_message(self, sn_id, use_as_cache=False):
         message = self.messages.find_one({'sn_id': sn_id})
         if use_as_cache and message and (datetime.now() - message.get('update_date')).seconds > message_cache_time:
             return None
         if message:
-            return APIMessage(message, from_db=True)
+            return APIMessage(message)
 
     def save_message(self, message):
         """
@@ -421,13 +422,12 @@ class Persistent(object):
         """
         if not isinstance(message.get('user'), DBRef):
             user_sn_id = message.get('user').get('sn_id')
-            if user_sn_id:
-                user = self.get_user(sn_id=user_sn_id)
-                if user:
-                    user_ref = self.get_user_ref(user)
-                    message['user'] = user_ref
-                else:
-                    raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
+            user = self.get_user(sn_id=user_sn_id)
+            if user:
+                user_ref = self.get_user_ref(user)
+                message['user'] = user_ref
+            else:
+                raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
 
         result = self._save_or_update_object(self.messages, message['sn_id'], message)
         return result

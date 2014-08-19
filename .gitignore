@@ -4,3 +4,4 @@
 _dumps
 sn_retr_env
 dicts
+*.rdb

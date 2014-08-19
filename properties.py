@@ -21,7 +21,8 @@ def module_path():
 
 certs_path = os.path.join(module_path(), 'cacert.pem')
 
-sleep_time = lambda: 60 * random.randint(2, 5)
+sleep_time_long = lambda: 60 * random.randint(2, 5)
+sleep_time_short = lambda: random.randint(1,4)
 tryings_count = 5
 
 #facebook application credentials

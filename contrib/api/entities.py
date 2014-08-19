@@ -46,7 +46,8 @@ class ProxySession(Session):
             else:
                 return result
 
-#TODO refactor!
+
+# TODO refactor!
 class API(object):
     def __auth(self):
         pass
@@ -76,6 +77,10 @@ class APISocialObject(dict):
     def __hash__(self):
         return self.get('sn_id')
 
+    @property
+    def sn_id(self):
+        return self.get('sn_id')
+
 
 class APIUser(APISocialObject):
     def __init__(self, data_dict, created_at_format=None, from_db=False):
@@ -88,10 +93,6 @@ class APIUser(APISocialObject):
     @property
     def screen_name(self):
         return self.get('screen_name')
-
-    @property
-    def sn_id(self):
-        return self.get('sn_id')
 
     @property
     def messages_count(self):
@@ -107,7 +108,7 @@ class APIUser(APISocialObject):
 
 
 class APIMessage(APISocialObject):
-    def __init__(self, data_dict, created_at_format=None, from_db=False):
-        super(APIMessage, self).__init__(data_dict, created_at_format, from_db)
+    def __init__(self, data_dict):
+        super(APIMessage, self).__init__(data_dict)
 
 
