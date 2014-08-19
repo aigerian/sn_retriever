@@ -211,81 +211,95 @@ class VK_API(API):
         return users
 
     def get_comment_likers(self, comments):
+        result = {}
         for comment in comments:
-            pass
+            if comment['likes']['count'] != 0:
+                try:
+                    result[comment.sn_id] = self.get_likers_ids('comment', comment['user']['sn_id'], comment.sn_id)
+                except APIException:
+                    pass
+        return result
 
     def get_content_entities(self, user_id):
-        # todo что из этого нравится самому пользователю
-        #todo обрабатывать каждый комментарий на наличие лайков
         """
         Возвращает все текстовые данные которые связанны с пользователем
         (посты на стене, заметки, видео/фото комментарии).
-        А также идентификаторы лайкнувших это все
+        А также идентификаторы лайкнувших это все, и лайкнувших комменты
         А также идентификаторы объектов которые пользователь нагенерил (либо добавил к себе)
         За исключением групп
 
         :param user_id: идентификатор пользователя (int)
         :return:
         """
+
+        def fill_likers_by_comments(likers, comments):
+            likers.extend(
+                reduce(lambda acc, x: acc + x,
+                       self.get_comment_likers(wall_post_comments).itervalues(),
+                    []))
+
         likers = []
         messages = []
         content_object_ids = {'photo': [], 'video': [], 'note': [], 'wall_post': []}
-        # try:
-        #     photo_result = self.get_all("photos.getAll", batch_size=200,
-        #                                 items_process=self.array_item_process,
-        #                                 count_process=self.array_count_process,
-        #                                 **{'owner_id': user_id,
-        #                                    'extended': 1,
-        #                                    'photo_sizes': 0,
-        #                                    'no_service_albums': 0})
+        try:
+            photo_result = self.get_all("photos.getAll", batch_size=200,
+            items_process=self.array_item_process,
+                                            count_process=self.array_count_process,
+                                            **{'owner_id': user_id,
+                                               'extended': 1,
+                                               'photo_sizes': 0,
+                                               'no_service_albums': 0})
+
+            for photo_el in photo_result:
+                content_object_ids['photo'].append(photo_el['pid'])
+                photo_comments = self.get_comments(user_id, photo_el['pid'], 'photo')
+                fill_likers_by_comments(likers,photo_comments)
+                messages.extend(photo_comments)
+                if photo_el.get('likes').get('count') != 0:
+                    photo_likers = self.get_likers_ids('photo', user_id, photo_el['pid'])
+                    likers.extend(photo_likers)
+        except APIException as e:
+            self.log.info('can not load comments/likers of photos for user_id: %s\nbecause:%s' % (user_id, e))
         #
-        #     for photo_el in photo_result:
-        #         content_object_ids['photo'].append(photo_el['pid'])
-        #         photo_comments = self.get_comments(user_id, photo_el['pid'], 'photo')
-        #         messages.extend(photo_comments)
-        #         if photo_el.get('likes').get('count') != 0:
-        #             photo_likers = self.get_likers_ids('photo', user_id, photo_el['pid'])
-        #             likers.extend(photo_likers)
-        # except APIException as e:
-        #     self.log.info('can not load comments/likers of photos for user_id: %s\nbecause:%s' % (user_id, e))
-        #
-        # try:
-        #     video_result = self.get_all('video.get',
-        #                                 batch_size=100,
-        #                                 items_process=self.array_item_process,
-        #                                 count_process=self.array_count_process,
-        #                                 **{'owner_id': user_id, 'extended': 1})
-        #     for video_el in video_result:
-        #         content_object_ids['video'].append(video_el['vid'])
-        #         if video_el.get('comments') != 0:
-        #             video_comments = self.get_comments(user_id, video_el['vid'], 'video')
-        #             messages.extend(video_comments)
-        #         if video_el.get('likes').get('count') != 0:
-        #             video_likers = self.get_likers_ids('video', user_id, video_el['vid'])
-        #             likers.extend(video_likers)
-        # except APIException as e:
-        #     self.log.info('can not load comments/likers of videos for user_id: %s\nbecause:%s' % (user_id, e))
-        #
-        # try:
-        #     notes_result = self.get_notes(user_id)
-        #     for note_el in notes_result:
-        #         content_object_ids['note'].append(note_el.sn_id)
-        #         messages.append(note_el)
-        #         if note_el['ncom'] != 0:
-        #             note_comments = self.get_comments(user_id, note_el.sn_id, 'note')
-        #             messages.extend(note_comments)
-        # except APIException as e:
-        #     self.log.info('can not load comments/likers of notes for user_id: %s\nbecause:%s' % (user_id, e))
+        try:
+            video_result = self.get_all('video.get',
+                                        batch_size=100,
+                                        items_process=self.array_item_process,
+                                        count_process=self.array_count_process,
+                                        **{'owner_id': user_id, 'extended': 1})
+            for video_el in video_result:
+                content_object_ids['video'].append(video_el['vid'])
+                if video_el.get('comments') != 0:
+                    video_comments = self.get_comments(user_id, video_el['vid'], 'video')
+                    fill_likers_by_comments(likers,video_comments)
+                    messages.extend(video_comments)
+                if video_el.get('likes').get('count') != 0:
+                    video_likers = self.get_likers_ids('video', user_id, video_el['vid'])
+                    likers.extend(video_likers)
+        except APIException as e:
+            self.log.info('can not load comments/likers of videos for user_id: %s\nbecause:%s' % (user_id, e))
+
+        try:
+            notes_result = self.get_notes(user_id)
+            for note_el in notes_result:
+                content_object_ids['note'].append(note_el.sn_id)
+                messages.append(note_el)
+                if note_el['ncom'] != 0:
+                    note_comments = self.get_comments(user_id, note_el.sn_id, 'note')
+                    messages.extend(note_comments)
+        except APIException as e:
+            self.log.info('can not load comments/likers of notes for user_id: %s\nbecause:%s' % (user_id, e))
 
         try:
             wall_posts = self.get_wall_posts(user_id)
             for wall_post in wall_posts:
                 messages.append(wall_post)
                 content_object_ids['wall_post'].append(wall_post.sn_id)
-                if wall_post['comments']['count']!=0:
+                if wall_post['comments']['count'] != 0:
                     wall_post_comments = self.get_comments(user_id, wall_post.sn_id, 'wall')
+                    fill_likers_by_comments(likers, wall_post_comments)
                     messages.extend(wall_post_comments)
-                if wall_post['likes']['count']!=0:
+                if wall_post['likes']['count'] != 0:
                     wall_post_likers = self.get_likers_ids('wall', user_id, wall_post.sn_id)
                     likers.extend(wall_post_likers)
         except APIException as e:
