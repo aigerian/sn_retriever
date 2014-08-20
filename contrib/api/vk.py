@@ -1,8 +1,7 @@
 # coding=utf-8
 import datetime
 from time import sleep
-from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields, logger, sleep_time_long, \
-    sleep_time_short
+from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields, logger, sleep_time_short
 from contrib.api.entities import API, APIException, APIUser, APIMessage
 
 import json
@@ -21,6 +20,7 @@ comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
 
 
 class VK_API(API):
+    # todo сделай несколько идентификаторов
     def __init__(self):
         self.log = logger.getChild('VK_API')
         self.access_token = self.__auth()
@@ -66,6 +66,7 @@ class VK_API(API):
         return access_token
 
     def get(self, method_name, **kwargs):
+        # todo change access token when to many request exception
         while 1:
             params = dict({'access_token': self.access_token['access_token']}, **kwargs)
             result = requests.get('%s%s' % (self.base_url, method_name), params=params)
@@ -117,34 +118,6 @@ class VK_API(API):
         result = self.get_all(command, batch_size=1000, **kwargs)
         return result
 
-    def get_wall_posts(self, user_id):
-        """
-        Возвращает два списка постов: которые сделал сам юзер и те которые сделали ему другие на стену.
-        :param user_id:
-        :return:
-        """
-        command = 'wall.get'
-        kwargs = {'owner_id': user_id, 'filter': 'all', }
-        result = self.get_all(command,
-                              batch_size=100,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
-                              **kwargs)
-        return [VK_APIMessage(el) for el in result]
-
-    def get_notes(self, user_id):
-        command = 'notes.get'
-        kwargs = {'user_id': user_id, 'sort': 1}
-        result = self.get_all(command,
-                              batch_size=100,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
-                              **kwargs)
-        for el in result:
-            el['id'] = el.pop('nid') if 'nid' in el else el.get('id')
-
-        return [VK_APIMessage(el) for el in result]
-
     def get_comments(self, owner_id, entity_id, entity_type='wall'):
         """
         :param entity_id: the identification of post from wall of user who have -
@@ -182,7 +155,6 @@ class VK_API(API):
                               **kwargs)
         return result
 
-
     @staticmethod
     def retrieve_mentions(text):
         prep = re.compile(u'\[id\d+\|').findall(text)
@@ -210,112 +182,133 @@ class VK_API(API):
                 users.append(VK_APIUser(el))
         return users
 
-    def get_comment_likers(self, comments):
-        result = {}
+    def _fill_comment_likers(self, comments):
+        """
+        Заполняем комментарии идентификаторами лайкнувших
+        :param comments:
+        """
         for comment in comments:
             if comment['likes']['count'] != 0:
                 try:
-                    result[comment.sn_id] = self.get_likers_ids('comment', comment['user']['sn_id'], comment.sn_id)
+                    comment['likers'] = self.get_likers_ids('comment', comment['user']['sn_id'], comment.sn_id)
                 except APIException:
                     pass
-        return result
 
-    def get_content_entities(self, user_id):
-        """
-        Возвращает все текстовые данные которые связанны с пользователем
-        (посты на стене, заметки, видео/фото комментарии).
-        А также идентификаторы лайкнувших это все, и лайкнувших комменты
-        А также идентификаторы объектов которые пользователь нагенерил (либо добавил к себе)
-        За исключением групп
-
-        :param user_id: идентификатор пользователя (int)
-        :return:
-        """
-
-        def fill_likers_by_comments(likers, comments):
-            likers.extend(
-                reduce(lambda acc, x: acc + x,
-                       self.get_comment_likers(wall_post_comments).itervalues(),
-                    []))
-
-        likers = []
-        messages = []
-        content_object_ids = {'photo': [], 'video': [], 'note': [], 'wall_post': []}
+    def get_photos(self, user_id):
         try:
+            comments = {}
+            result = []
             photo_result = self.get_all("photos.getAll", batch_size=200,
-            items_process=self.array_item_process,
-                                            count_process=self.array_count_process,
-                                            **{'owner_id': user_id,
-                                               'extended': 1,
-                                               'photo_sizes': 0,
-                                               'no_service_albums': 0})
+                                        items_process=self.array_item_process,
+                                        count_process=self.array_count_process,
+                                        **{'owner_id': user_id,
+                                           'extended': 1,
+                                           'photo_sizes': 0,
+                                           'no_service_albums': 0})
 
             for photo_el in photo_result:
-                content_object_ids['photo'].append(photo_el['pid'])
+                photo_el['sn_id'] = photo_el['pid']
                 photo_comments = self.get_comments(user_id, photo_el['pid'], 'photo')
-                fill_likers_by_comments(likers,photo_comments)
-                messages.extend(photo_comments)
+                self._fill_comment_likers(photo_comments)
+                comments[photo_el['pid']] = photo_comments
                 if photo_el.get('likes').get('count') != 0:
-                    photo_likers = self.get_likers_ids('photo', user_id, photo_el['pid'])
-                    likers.extend(photo_likers)
+                    photo_el['likers'] = self.get_likers_ids('photo', user_id, photo_el['pid'])
+
+            return result, comments
         except APIException as e:
             self.log.info('can not load comments/likers of photos for user_id: %s\nbecause:%s' % (user_id, e))
-        #
+
+    def get_videos(self, user_id):
         try:
+            comments = {}
             video_result = self.get_all('video.get',
                                         batch_size=100,
                                         items_process=self.array_item_process,
                                         count_process=self.array_count_process,
                                         **{'owner_id': user_id, 'extended': 1})
             for video_el in video_result:
-                content_object_ids['video'].append(video_el['vid'])
+                video_el['sn_id'] = video_el['vid']
                 if video_el.get('comments') != 0:
                     video_comments = self.get_comments(user_id, video_el['vid'], 'video')
-                    fill_likers_by_comments(likers,video_comments)
-                    messages.extend(video_comments)
+                    self._fill_comment_likers(video_comments)
+                    comments[video_el['vid']] = video_comments
                 if video_el.get('likes').get('count') != 0:
                     video_likers = self.get_likers_ids('video', user_id, video_el['vid'])
-                    likers.extend(video_likers)
+                    video_el['likers'] = video_likers
+
+            return video_result, comments
         except APIException as e:
             self.log.info('can not load comments/likers of videos for user_id: %s\nbecause:%s' % (user_id, e))
 
+    def get_notes(self, user_id):
         try:
-            notes_result = self.get_notes(user_id)
-            for note_el in notes_result:
-                content_object_ids['note'].append(note_el.sn_id)
-                messages.append(note_el)
+            command = 'notes.get'
+            kwargs = {'user_id': user_id, 'sort': 1}
+            result = self.get_all(command,
+                                  batch_size=100,
+                                  items_process=self.array_item_process,
+                                  count_process=self.array_count_process,
+                                  **kwargs)
+            notes_result = []
+            comments = {}
+            for note_el in result:
+                if 'nid' in note_el:
+                    note_el['id'] = note_el.pop('nid')
+                note = VK_APIMessage(note_el)
                 if note_el['ncom'] != 0:
-                    note_comments = self.get_comments(user_id, note_el.sn_id, 'note')
-                    messages.extend(note_comments)
+                    note_comments = self.get_comments(user_id, note_el['id'], 'note')
+                    self._fill_comment_likers(note_comments)
+                    comments[note.sn_id] = note_comments
+                notes_result.append(note)
+            return notes_result, comments
+
         except APIException as e:
             self.log.info('can not load comments/likers of notes for user_id: %s\nbecause:%s' % (user_id, e))
 
-        try:
-            wall_posts = self.get_wall_posts(user_id)
-            for wall_post in wall_posts:
-                messages.append(wall_post)
-                content_object_ids['wall_post'].append(wall_post.sn_id)
-                if wall_post['comments']['count'] != 0:
-                    wall_post_comments = self.get_comments(user_id, wall_post.sn_id, 'wall')
-                    fill_likers_by_comments(likers, wall_post_comments)
-                    messages.extend(wall_post_comments)
-                if wall_post['likes']['count'] != 0:
-                    wall_post_likers = self.get_likers_ids('wall', user_id, wall_post.sn_id)
-                    likers.extend(wall_post_likers)
-        except APIException as e:
-            self.log.info('can not load comments/likers of notes for user_id: %s\nbecause:%s' % (user_id, e))
-
-        return messages, list(set(likers)), content_object_ids
-
-    def search(self, q):
+    def get_wall_posts(self, user_id):
         """
-        :param q:
-        kwargs = {'extended': 1, 'q': q, 'count': 1000}
-        result = self.get(command, **kwargs)
-        return result[1:]
+        :param user_id:
         :return:
         """
-        command = 'newsfeed.search'
+        try:
+            command = 'wall.get'
+            kwargs = {'owner_id': user_id, 'filter': 'all', }
+            result = self.get_all(command,
+                                  batch_size=100,
+                                  items_process=self.array_item_process,
+                                  count_process=self.array_count_process,
+                                  **kwargs)
+            wall_post_result = []
+            comments = {}
+            for wall_post in result:
+                post = VK_APIMessage(wall_post)
+                if post['comments']['count'] != 0:
+                    wall_post_comments = self.get_comments(user_id, post.sn_id, 'wall')
+                    self._fill_comment_likers(wall_post_comments)
+                    comments[post.sn_id] = wall_post_comments
+                if wall_post['likes']['count'] != 0:
+                    wall_post_likers = self.get_likers_ids('wall', user_id, post.sn_id)
+                    post['likers'] = wall_post_likers
+                wall_post_result.append(post)
+
+            return wall_post_result, comments
+        except APIException as e:
+            self.log.info('can not load comments/likers of wall posts for user_id: %s\nbecause:%s' % (user_id, e))
+
+
+    def get_content_entities(self, user_id):
+        """
+        Возвращает объекты фотографий, видео, записок и записей на стене с идентификаторами лайкнувших людей
+        а также, комментарии (также с идентификаторами лайкнувших)
+
+        ?То что пользователь сделал и то что сделали иниые пользователи
+        ?То что пользователю нравится из этого
+        
+        :param user_id: идентификатор пользователя (int)
+        :return:
+        """
+        #todo realise it
+        pass
 
 
 class VK_APIUser(APIUser):
