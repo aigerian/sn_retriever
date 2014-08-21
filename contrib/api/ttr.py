@@ -319,6 +319,7 @@ class TTR_APIUser(APIUser):
 class TTR_APIMessage(APIMessage):
     def __init__(self, data_dict, created_at_format=None):
         data = dict(data_dict)
+        data['source'] = 'ttr'
         retweet = data.get('retweeted_status')
         if retweet:
             retweet = dict(retweet)

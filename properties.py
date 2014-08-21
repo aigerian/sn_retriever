@@ -128,6 +128,11 @@ def get_ttr_credentials(number):
 vk_key = 'mRNxuLGPrSCtuqLl9DkU'
 vk_app_name = 'vk_retr'
 
+vk_logins = {1:'+79811064022',
+             2:'+79060739957',
+             3:'+79138973664',
+             }
+
 vk_login = '+79811064022'
 vk_pass = 'sederfes100500'
 
