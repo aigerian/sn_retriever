@@ -22,10 +22,10 @@ def module_path():
 certs_path = os.path.join(module_path(), 'cacert.pem')
 
 sleep_time_long = lambda: 60 * random.randint(2, 5)
-sleep_time_short = lambda: random.randint(1,4)
+sleep_time_short = lambda: random.randint(1, 4)
 tryings_count = 5
 
-#facebook application credentials
+# facebook application credentials
 fb_app_id = '182482928555387'
 fb_app_secret = 'd8188882ccf227f3b1c1b2f31b7f4429'
 fb_client_token = '655cffd14ae5a391b89197e3e5dc3e12'
@@ -118,6 +118,7 @@ ttr_access_tokens_secret = {1: 'H9dfxvLnxT9HGw7PH2NQsBAKbup1qEgz81UrURqAeCkaA',
                             17: 'X547yZFFIjxeqabfo2fCjqB4pceSvNdFv4WkLz3UnjcJs'
 }
 
+
 def get_ttr_credentials(number):
     return {'consumer_key': ttr_consumer_keys[number],
             'consumer_secret': ttr_consumers_secret[number],
@@ -128,21 +129,24 @@ def get_ttr_credentials(number):
 vk_key = 'mRNxuLGPrSCtuqLl9DkU'
 vk_app_name = 'vk_retr'
 
-vk_logins = {1:'+79811064022',
-             2:'+79060739957',
-             3:'+79138973664',
-             }
+vk_logins = {1: '+79811064022',
+             # 2: '+79060739957',
+             # 3: '+79138973664',
+             # 4: '+79060740391',
+             # 5: '+79516739528'
+}
 
-vk_login = '+79811064022'
 vk_pass = 'sederfes100500'
 
-vk_fields = 'connections, nickname, screen_name, sex, bdate, city, country, timezone, has_mobile, contacts, education, online, counters, relation, last_seen, status, universities'
+vk_user_fields = 'connections, nickname, screen_name, sex, bdate, city, country, timezone, has_mobile, contacts, education, online, counters, relation, last_seen, status, universities'
+vk_group_fields = 'city, country, place, description, wiki_page, members_count, counters, start_date, end_date, activity'
 #vk helper...
 vk_access_credentials = {'client_id': '3784486',
-                         'scope': 'friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
+                         #'scope': 'friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
+                         'scope': 262144,
                          'redirect_uri': 'https://oauth.vk.com/blank.html',
                          'display': 'mobile',
-                         'v': '4.104',
+                         'v': '5.4',
                          'response_type': 'token'}
 #also...
 vk_edit_app_url = 'https://vk.com/editapp?id=3784486&section=options'

@@ -70,9 +70,9 @@ class APIException(Exception):
     pass
 
 
-class APISocialObject(dict):
+class APIContentObject(dict):
     def __init__(self, data_dict, created_at_format=None, from_db=False):
-        super(APISocialObject, self).__init__(data_dict)
+        super(APIContentObject, self).__init__(data_dict)
 
     def __hash__(self):
         return self.get('sn_id')
@@ -81,8 +81,16 @@ class APISocialObject(dict):
     def sn_id(self):
         return self.get('sn_id')
 
+class APISocialObject(APIContentObject):
+    def __init__(self, data_dict):
+        super(APISocialObject, self).__init__(data_dict)
 
-class APIUser(APISocialObject):
+    @property
+    def members(self):
+        return self.get('members')
+
+
+class APIUser(APIContentObject):
     def __init__(self, data_dict, created_at_format=None, from_db=False):
         super(APIUser, self).__init__(data_dict, created_at_format, from_db)
 
@@ -107,7 +115,7 @@ class APIUser(APISocialObject):
         return self.get('followers_count')
 
 
-class APIMessage(APISocialObject):
+class APIMessage(APIContentObject):
     def __init__(self, data_dict):
         super(APIMessage, self).__init__(data_dict)
 

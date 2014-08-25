@@ -2,9 +2,9 @@
 import datetime
 import random
 from time import sleep
-from properties import certs_path, vk_access_credentials, vk_login, vk_pass, vk_fields, logger, sleep_time_short, \
-    vk_logins
-from contrib.api.entities import API, APIException, APIUser, APIMessage, APISocialObject
+from properties import certs_path, vk_access_credentials, vk_pass, vk_user_fields, logger, sleep_time_short, \
+    vk_logins, vk_group_fields
+from contrib.api.entities import API, APIException, APIUser, APIMessage, APIContentObject, APISocialObject
 
 import json
 import re
@@ -12,6 +12,10 @@ import urlparse
 
 from lxml import html
 import requests
+# TODO преобразовывать минимально весь текст в нормальный вид
+def r(string):
+    return string.replace('<br>', '\n')
+
 
 __author__ = '4ikist'
 
@@ -21,6 +25,7 @@ comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
                   'note': {'cmd': 'notes', 'id': 'note'}}
 
 error_codes = {180: 'note not found'}
+unix_time = lambda x: datetime.datetime.fromtimestamp(int(x))
 
 
 class AccessTokenHolder(object):
@@ -30,6 +35,7 @@ class AccessTokenHolder(object):
         for el in vk_logins.itervalues():
             token = self.__auth(el)
             self.tokens[token['access_token']] = token
+        self.current_login = None
 
     def get_token(self, used_token=None):
         if used_token:
@@ -55,6 +61,7 @@ class AccessTokenHolder(object):
             self.log.info('will sleep %s seconds' % (times[-1] - delta))
             sleep(abs(times[-1] - delta))
         result_token = self.__check_for_update(candidates[times[-1]])
+        self.current_login = result_token['login']
         return result_token['access_token']
 
     def __auth(self, vk_login):
@@ -98,7 +105,8 @@ class AccessTokenHolder(object):
         return access_token
 
     def __check_for_update(self, token):
-        if (datetime.datetime.now() - token['init_time']).total_seconds() > token['expires_in']:
+        if (datetime.datetime.now() - token['init_time']).total_seconds() > token['expires_in'] and token[
+            'expires_in'] != 0:
             old_token = self.tokens.pop(token['access_token'])
             new_token = self.__auth(old_token['login'])
             self.tokens[new_token['access_token']] = new_token
@@ -117,15 +125,23 @@ class VK_API(API):
 
 
     def get(self, method_name, **kwargs):
+        def change_token(e):
+            self.log.info(
+                'will change access token for \nmethod: %s\nparams: %s\nbecause: %s' % (method_name, str(kwargs), e))
+            self.access_token = self.token_holder.get_token(self.access_token)
+
         while 1:
             params = dict({'access_token': self.access_token}, **kwargs)
             result = requests.get('%s%s' % (self.base_url, method_name), params=params)
-            result_object = json.loads(result.content)
+            try:
+                result_object = json.loads(result.content)
+            except Exception as e:
+                change_token(e)
+                continue
             if 'error' in result_object:
                 if result_object['error']['error_code'] == 6:
                     # change access token and try
-                    self.log.info('will change access token for \nmethod: %s\nparams: %s' % (method_name, str(kwargs)))
-                    self.access_token = self.token_holder.get_token(self.access_token)
+                    change_token(result['error'])
                     continue
                 else:
                     raise APIException(result_object)
@@ -155,7 +171,7 @@ class VK_API(API):
     def get_friends(self, user_id):
         command = 'friends.get'
         kwargs = {'order': 'name',
-                  'fields': vk_fields,
+                  'fields': vk_user_fields,
                   'user_id': user_id}
         result = self.get(command, **kwargs)
         return result
@@ -163,10 +179,90 @@ class VK_API(API):
     def get_followers(self, user_id):
         command = 'users.getFollowers'
         kwargs = {
-            'fields': vk_fields,
+            'fields': vk_user_fields,
             'user_id': user_id}
         result = self.get_all(command, batch_size=1000, **kwargs)
         return result
+
+    def get_subscriptions(self, user_id):
+        command = 'subscriptions.get'
+        result = self.get_all(command, batch_size=1000,
+                              items_process=lambda x: x['users'],
+                              **{'uid': user_id})
+        return result
+
+    def get_subscription_followers(self, user_id):
+        command = 'subscriptions.getFollowers'
+        result = self.get_all(command, batch_size=1000,
+                              items_process=lambda x: x['users'],
+                              **{'uid': user_id})
+        return result
+
+    def get_groups(self, user_id):
+        def get_members(group_id):
+            return self.get_all('groups.getMembers', batch_size=1000, items_process=lambda x: x['users'],
+                                **{'sort': 'time_asc', 'gid': group_id})
+
+        result = []
+        command = 'groups.get'
+        group_result = self.get_all(command, batch_size=1000,
+                                    count_process=self.array_count_process,
+                                    items_process=self.array_item_process,
+                                    **{'uid': user_id,
+                                       'extended': 1,
+                                       'fields': vk_group_fields})
+        for group in group_result:
+            try:
+                members = get_members(group['gid'])
+                group['members'] = members
+            except APIException as e:
+                self.log.warn('can not load group members :( for group [%s]' % group.get('name'))
+            group.pop('is_admin')
+            group.pop('is_member')
+            group['source'] = 'vk'
+            result.append(APISocialObject({'sn_id': group['gid'],
+                                           'private': group['is_closed'],
+                                           'name': group['name'],
+                                           'screen_name': group['screen_name'],
+                                           'type': group['type'],
+                                           'known_members': group['members'] if group.get('members') else [user_id]}))
+        return result
+
+    def get_group_data(self, group_id):
+        message_results = []
+        content_objects = []
+        related_users = set()
+        topic_result = self.get_all('board.getTopics', batch_size=100,
+                                    count_process=lambda x: x['topics'][0],
+                                    items_process=lambda x: x['topics'][1:],
+                                    **{'group_id': group_id, 'order': 2,
+                                       'preview_length': 0})
+        for topic in topic_result:
+            if topic['comments'] != 0:
+                comments_result = self.get_all('board.getComments', batch_size=100,
+                                               count_process=lambda x: x['comments'][0],
+                                               items_process=lambda x: x['comments'][1:],
+                                               **{'group_id': group_id, 'topic_id': topic.get('id') or topic.get('tid'),
+                                                  'need_likes': 1, })
+                for topic_comment in comments_result:
+                    related_users.add(topic_comment['from_id'])
+                    # if topic_comment['likes']['count'] != 0:
+                    # topic_comment['likers'] = self.get_likers_ids('topic_comment', topic_comment['from_id'],
+                    # topic_comment['id'])
+                    message_results.append(
+                        VK_APIMessage(
+                            dict({'sn_id': "%s_%s" % (topic_comment['id'], topic.get('id') or topic.get('tid')),
+                                  'comment_id': topic_comment['id']}, **topic_comment),
+                            comment_for={'type': 'group_topic', 'group_id': group_id,
+                                         'id': topic.get('id') or topic.get('tid')})
+                    )
+            content_objects.append(VK_APIContentObject({'sn_id': topic.get('id') or topic.get('tid'),
+                                                        'text': topic['title'],
+                                                        'create_date': unix_time(topic['created']),
+                                                        'change_date': unix_time(topic['updated'])}))
+            related_users.add(topic['created_by'])
+
+        return message_results, content_objects, list(related_users)
 
     def get_comments(self, owner_id, entity_id, entity_type='wall'):
         """
@@ -182,13 +278,20 @@ class VK_API(API):
         if entity_type == 'note':
             kwargs.pop('need_likes')
             kwargs['sort'] = 1
-        result = self.get_all(command,
-                              batch_size=100,
-                              items_process=self.array_item_process,
-                              count_process=self.array_count_process,
-                              **kwargs)
-        return [VK_APIMessage(el, comment_for={'type': entity_type, 'id': entity_id, 'owner_id': owner_id}) for el in
-                result]
+        comment_result = self.get_all(command,
+                                      batch_size=100,
+                                      items_process=self.array_item_process,
+                                      count_process=self.array_count_process,
+                                      **kwargs)
+        result = []
+        for comment_el in comment_result:
+            comment_el['sn_id'] = '%s_%s' % (entity_id, comment_el.get('cid'))
+            comment_el['text'] = comment_el.get('message') or comment_el.get('text')
+            comment = VK_APIMessage(comment_el,
+                                    comment_for={'type': entity_type, 'id': entity_id, 'owner_id': owner_id},
+                                    comment_id=comment_el.get('cid'))
+            result.append(comment)
+        return result
 
     def get_likers_ids(self, object_type, owner_id, item_id, is_community=False):
         command = 'likes.getList'
@@ -221,7 +324,7 @@ class VK_API(API):
         :return: vk_fields of user
         """
         command = 'users.get'
-        kwargs = {'user_ids': user_id, 'fields': vk_fields}
+        kwargs = {'user_ids': user_id, 'fields': vk_user_fields}
         result = self.get(command, **kwargs)
         user = VK_APIUser(result[0])
         return user
@@ -230,58 +333,88 @@ class VK_API(API):
         command = 'getProfiles'
         users = []
         for i in xrange((len(uids) / 1000) + 1):
-            kwargs = {'uids': ','.join([str(el) for el in uids[i * 1000:(i + 1) * 1000]]), 'fields': vk_fields}
+            kwargs = {'uids': ','.join([str(el) for el in uids[i * 1000:(i + 1) * 1000]]), 'fields': vk_user_fields}
             result = self.get(command, **kwargs)
             for el in result:
                 users.append(VK_APIUser(el))
         return users
 
-    def _fill_comment_likers(self, comments):
+    def _fill_comment_likers(self, comments, comment_type='comment'):
         """
         Заполняем комментарии идентификаторами лайкнувших
         :param comments:
         """
+        likers = []
         for comment in comments:
             if comment['likes']['count'] != 0:
                 try:
-                    comment['likers'] = self.get_likers_ids('comment', comment['user']['sn_id'], comment.sn_id)
+                    comment['likers'] = self.get_likers_ids(comment_type, comment['user']['sn_id'], comment.comment_id)
+                    likers.extend(comment['likers'])
                 except APIException as e:
                     self.log.error(e)
                     self.log.info('can not load comment likes for comment %s' % comment.sn_id)
+        return likers
 
     def get_photos(self, user_id):
+        """
+        Возвращает фотографии, альбомы, комментарии и лайкнувших пользователей
+        :param user_id:
+        :return:
+        """
         comments = []
         result = []
-
+        related_users = []
         try:
             photo_result = self.get_all("photos.getAll", batch_size=200,
                                         items_process=self.array_item_process,
                                         count_process=self.array_count_process,
                                         **{'owner_id': user_id,
                                            'extended': 1,
-                                           'photo_sizes': 0,
+                                           'photo_sizes': 1,
                                            'no_service_albums': 0})
-
+            albums = set()
             for photo_el in photo_result:
-                photo_el['sn_id'] = "_".join(['photo', str(user_id), str(photo_el['pid'])])
+                photo = VK_APIContentObject({'sn_id': photo_el.get('id') or photo_el.get('pid'),
+                                             'type': 'photo',
+                                             'user': {'sn_id': user_id},
+                                             'parent_id': photo_el['aid'],
+                                             'text': photo_el['text'],
+                                             'create_date': unix_time(photo_el['created']),
+                                             'url': photo_el['sizes'][-1]['src']})
                 if photo_el.get('likes').get('count') != 0:
-                    photo_el['likers'] = self.get_likers_ids('photo', user_id, photo_el['pid'])
-                result.append(APISocialObject(photo_el))
-
-                photo_comments = self.get_comments(user_id, photo_el['pid'], 'photo')
-                self._fill_comment_likers(photo_comments)
+                    photo['likers'] = self.get_likers_ids('photo', user_id, photo.sn_id)
+                    related_users.extend(photo['likers'])
+                result.append(photo)
+                if photo_el['aid'] > 0:
+                    albums.add(photo_el['aid'])
+                photo_comments = self.get_comments(user_id, photo.sn_id, 'photo')
+                likers = self._fill_comment_likers(photo_comments, 'photo_comment')
                 comments.extend(photo_comments)
+                related_users.extend(likers)
+
+            albums_result = self.get_all('photos.getAlbums', batch_size=100,
+                                         count_process=lambda x: len(x), items_process=lambda x: x,
+                                         **{'owner_id': user_id, 'album_ids': ','.join([str(el) for el in albums]),
+                                            'need_system': 0, 'need_covers': 0, })
+            for album in albums_result:
+                result.append(VK_APIContentObject({'sn_id': album['aid'],
+                                                   'type': 'photo_album',
+                                                   'user': {'sn_id': user_id},
+                                                   'text': '%s\n%s' % (album['title'], album.get('description')),
+                                                   'create_date': unix_time(album['created']),
+                                                   'change_date': unix_time(album['updated'])}))
         except APIException as e:
             self.log.exception(e)
             self.log.info('can not load comments/likers of photos for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return result, comments
+        related_users.remove(user_id)
+        return result, comments, list(set(related_users))
 
 
     def get_videos(self, user_id):
         comments = []
         result = []
-
+        related_users = []
         try:
             video_result = self.get_all('video.get',
                                         batch_size=100,
@@ -289,22 +422,29 @@ class VK_API(API):
                                         count_process=self.array_count_process,
                                         **{'owner_id': user_id, 'extended': 1})
             for video_el in video_result:
-                video_el['sn_id'] = "_".join(['video', str(user_id), str(video_el['vid'])])
+                video = VK_APIContentObject({'sn_id': video_el.get('id') or video_el.get('vid'),
+                                             'type': 'video',
+                                             'user': {'sn_id': user_id},
+                                             'text': '%s\n%s' % (video_el['title'], video_el['description']),
+                                             'create_date': unix_time(video_el['date'])
+                })
                 if video_el.get('likes').get('count') != 0:
-                    video_likers = self.get_likers_ids('video', user_id, video_el['vid'])
-                    video_el['likers'] = video_likers
-                result.append(APISocialObject(video_el))
+                    video_likers = self.get_likers_ids('video', user_id, video.sn_id)
+                    video['likers'] = video_likers
+                    related_users.extend(video_likers)
+                result.append(video)
 
                 if video_el.get('comments') != 0:
-                    video_comments = self.get_comments(user_id, video_el['vid'], 'video')
-                    self._fill_comment_likers(video_comments)
+                    video_comments = self.get_comments(user_id, video.sn_id, 'video')
+                    likers = self._fill_comment_likers(video_comments, 'video_comment')
                     comments.extend(video_comments)
+                    related_users.extend(likers)
 
         except APIException as e:
             self.log.exception(e)
             self.log.info('can not load comments/likers of videos for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return result, comments
+        return result, comments, list(set(related_users))
 
 
     def get_notes(self, user_id):
@@ -312,13 +452,11 @@ class VK_API(API):
         comments = []
 
         try:
-            command = 'notes.get'
-            kwargs = {'user_id': user_id, 'sort': 1}
-            result = self.get_all(command,
+            result = self.get_all('notes.get',
                                   batch_size=100,
                                   items_process=self.array_item_process,
                                   count_process=self.array_count_process,
-                                  **kwargs)
+                                  **{'user_id': user_id, 'sort': 1})
             for note_el in result:
                 if 'nid' in note_el:
                     note_el['id'] = note_el.pop('nid')
@@ -327,7 +465,7 @@ class VK_API(API):
 
                 if note_el['ncom'] != 0:
                     note_comments = self.get_comments(user_id, note_el['id'], 'note')
-                    self._fill_comment_likers(note_comments)
+                    self._fill_comment_likers(note_comments, 'note')
                     comments.extend(note_comments)
 
         except APIException as e:
@@ -341,80 +479,104 @@ class VK_API(API):
         :param user_id:
         :return:
         """
+
+        def get_reposts(post_id):
+            reposts = []
+            result = self.get_all('wall.getReposts', batch_size=1000,
+                                  count_process=lambda x: len(x['items']),
+                                  items_process=lambda x: x['items'],
+                                  **{'owner_id': user_id, 'post_id': post_id})
+            for repost in result:
+                reposts.append(
+                    {'user': repost['from_id'], 'created': unix_time(repost['date']), 'text': repost['text']})
+            return reposts
+
         wall_post_result = []
         comments = []
-
+        likers = []
         try:
-            command = 'wall.get'
-            kwargs = {'owner_id': user_id, 'filter': 'all', }
-            result = self.get_all(command,
+            result = self.get_all('wall.get',
                                   batch_size=100,
                                   items_process=self.array_item_process,
                                   count_process=self.array_count_process,
-                                  **kwargs)
+                                  **{'owner_id': user_id, 'filter': 'all', })
             for wall_post in result:
-                wall_post['sn_id'] = '_'.join(['wall', str(user_id), str(wall_post['id'])])
-                post = VK_APIMessage(wall_post)
-                if wall_post['likes']['count'] != 0:
-                    wall_post_likers = self.get_likers_ids('post', user_id, post['id'])
-                    post['likers'] = wall_post_likers
+                content_object = {'sn_id': '_'.join(['wall', str(user_id), str(wall_post['id'])])}
+                # если пост стоящий
+                if len(wall_post['text']) > 0 or \
+                                wall_post['reposts']['count'] > 0 or \
+                                wall_post['likes']['count'] > 0 or \
+                                wall_post['comments']['count'] > 0:
 
-                wall_post_result.append(post)
+                    if wall_post['likes']['count'] != 0:
+                        wall_post_likers = self.get_likers_ids('post', user_id, wall_post['id'])
+                        content_object['likers'] = wall_post_likers
+                        likers.extend(wall_post_likers)
+                    if wall_post['comments']['count'] != 0:
+                        wall_post_comments = self.get_comments(user_id, wall_post['id'], 'wall')
+                        comments_likers = self._fill_comment_likers(wall_post_comments)
+                        likers.extend(comments_likers)
+                        comments.extend(wall_post_comments)
 
-                if post['comments']['count'] != 0:
-                    wall_post_comments = self.get_comments(user_id, post['id'], 'wall')
-                    self._fill_comment_likers(wall_post_comments)
-                    comments.extend(wall_post_comments)
+                    if wall_post['reposts']['count'] != 0:
+                        content_object['reposts'] = get_reposts(wall_post['id'])
+
+                    post = VK_APIMessage(dict(content_object,
+                                              **{'text': wall_post['text'],
+                                                 'type': 'wall_post',
+                                                 'uid': user_id,
+                                                 'date': wall_post['date']}))
+                    wall_post_result.append(post)
 
         except APIException as e:
             self.log.info('can not load comments/likers of wall posts for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return wall_post_result, comments
+        return wall_post_result, comments, likers
 
-    def get_content_entities(self, user_id):
-        """
-        Возвращает объекты фотографий, видео, записок и записей на стене с идентификаторами лайкнувших людей
-        а также, комментарии (также с идентификаторами лайкнувших)
-
-        :param user_id: идентификатор пользователя (int)
-        :return:
-        """
-
-        def retrieve_likers(objects):
-            result = []
-            for el in objects:
-                result.extend(el.get('likers', []))
-            return result
-
-        entities = {}
-        comments = []
-        likers = []
-
-        photos, photos_comments = self.get_photos(user_id)
-        entities['photos'] = photos
-        comments.extend(photos_comments)
-        likers.extend(retrieve_likers(photos))
-        likers.extend(retrieve_likers(photos_comments))
-
-        videos, videos_comments = self.get_videos(user_id)
-        entities['videos'] = videos
-        comments.extend(videos_comments)
-        likers.extend(retrieve_likers(videos))
-        likers.extend(retrieve_likers(videos_comments))
-
-        notes, notes_comments = self.get_notes(user_id)
-        entities['notes'] = notes
-        comments.extend(notes_comments)
-        likers.extend(retrieve_likers(notes))
-        likers.extend(retrieve_likers(notes_comments))
-
-        wall_posts, wall_posts_comments = self.get_wall_posts(user_id)
-        entities['wall_posts'] = wall_posts
-        comments.extend(wall_posts_comments)
-        likers.extend(retrieve_likers(wall_posts))
-        likers.extend(retrieve_likers(wall_posts_comments))
-
-        return entities, comments, list(set(likers))
+        # def get_content_entities(self, user_id):
+        # """
+        # Возвращает объекты фотографий, видео, записок и записей на стене с идентификаторами лайкнувших людей
+        # а также, комментарии (также с идентификаторами лайкнувших)
+        #
+        # :param user_id: идентификатор пользователя (int)
+        # :return:
+        # """
+        #
+        # def retrieve_likers(objects):
+        # result = []
+        # for el in objects:
+        # result.extend(el.get('likers', []))
+        #         return result
+        #
+        #     entities = {}
+        #     comments = []
+        #     likers = []
+        #
+        #     photos, photos_comments = self.get_photos(user_id)
+        #     entities['photos'] = photos
+        #     comments.extend(photos_comments)
+        #     likers.extend(retrieve_likers(photos))
+        #     likers.extend(retrieve_likers(photos_comments))
+        #
+        #     videos, videos_comments = self.get_videos(user_id)
+        #     entities['videos'] = videos
+        #     comments.extend(videos_comments)
+        #     likers.extend(retrieve_likers(videos))
+        #     likers.extend(retrieve_likers(videos_comments))
+        #
+        #     notes, notes_comments = self.get_notes(user_id)
+        #     entities['notes'] = notes
+        #     comments.extend(notes_comments)
+        #     likers.extend(retrieve_likers(notes))
+        #     likers.extend(retrieve_likers(notes_comments))
+        #
+        #     wall_posts, wall_posts_comments = self.get_wall_posts(user_id)
+        #     entities['wall_posts'] = wall_posts
+        #     comments.extend(wall_posts_comments)
+        #     likers.extend(retrieve_likers(wall_posts))
+        #     likers.extend(retrieve_likers(wall_posts_comments))
+        #
+        #     return entities, comments, list(set(likers))
 
 
 class VK_APIUser(APIUser):
@@ -426,7 +588,7 @@ class VK_APIUser(APIUser):
             if len(bdate) > 4:
                 data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
         if data_dict.get('last_seen'):
-            data_dict['last_seen'] = datetime.datetime.fromtimestamp(data_dict['last_seen']['time'])
+            data_dict['last_seen'] = unix_time(data_dict['last_seen']['time'])
         if data_dict.get('counters'):
             counters = data_dict.get('counters')
             data_dict['followers_count'] = counters['followers']
@@ -436,7 +598,10 @@ class VK_APIUser(APIUser):
 
 
 class VK_APIMessage(APIMessage):
-    def __init__(self, data_dict, created_at_format=None, comment_for=None):
+    def __init__(self, data_dict, created_at_format=None, comment_for=None, comment_id=None):
+        data_dict.pop('cid', None)
+        data_dict.pop('online', None)
+        data_dict.pop('uid', None)
         data_dict['source'] = 'vk'
         data_dict['user'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
         if not 'sn_id' in data_dict:
@@ -444,11 +609,34 @@ class VK_APIMessage(APIMessage):
         data_dict['created_at'] = datetime.datetime.fromtimestamp(int(data_dict.pop('date')))
         if comment_for:
             data_dict['comment_for'] = comment_for
+            data_dict['comment_id'] = comment_id
         super(VK_APIMessage, self).__init__(data_dict)
+
+    @property
+    def comment_id(self):
+        return self.get('comment_id')
+
+
+class VK_APIContentObject(APIContentObject):
+    def __init__(self, data_dict):
+        data_dict['source'] = 'vk'
+        super(VK_APIContentObject, self).__init__(data_dict)
 
 
 if __name__ == '__main__':
     api = VK_API()
-    user = api.get_user('pafnutij_akak')
-    entities, likers = api.get_content_entities(user.sn_id)
-    print likers
+    user = api.get_user('266544674')
+    # for test video10130611_168906403
+    # entities, comments, likers = api.get_content_entities(user.sn_id)
+    # followers = api.get_followers(user.sn_id)
+    # user_subscript = api.get_subscriptions(user.sn_id)
+    # subscript_of_user = api.get_subscription_followers(user.sn_id)
+    groups = api.get_groups(user.sn_id)
+    # videos = api.get_videos(user.sn_id)
+    # photos = api.get_photos(user.sn_id)
+    # wall_posts = api.get_wall_posts(user.sn_id)
+    for group in groups:
+        so, com, ru = api.get_group_data(group.sn_id)
+        print so, com, ru
+
+
