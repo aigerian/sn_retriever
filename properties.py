@@ -168,7 +168,7 @@ logging.getLogger('requests.packages.urllib3.connectionpool').propagate = False
 #данные для подключения к mongo (основная БД)
 db_port = 27017
 db_host = 'localhost'
-db_name = 'ttr'
+db_name = 'vk'
 db_user = '4ikist'
 db_password = 'sederfes'
 

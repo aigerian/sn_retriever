@@ -3,7 +3,7 @@
 from datetime import datetime
 import json
 from bson import DBRef
-from contrib.api.entities import APIUser, APIMessage
+from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject
 from pymongo import MongoClient, ASCENDING
 
 import networkx as nx
@@ -165,7 +165,7 @@ class RedisGraphPersistent(nx.DiGraph):
         return_obj = {}
 
         for i in xrange(len(result)):
-            #field name
+            # field name
             if i % 2:
                 return_obj[result[i]] = result[i + 1]
 
@@ -176,7 +176,7 @@ class RedisGraphPersistent(nx.DiGraph):
         if node_data.get('name', None) is None:
             raise RGP_Node_Exception('must be name in your node data:\n%s' % node_data)
         name = node_data.get('name')
-        #for graph
+        # for graph
         self.engine.sadd('%s_nodes' % self.graph_name, name)
         self._save_data(name, node_data)
 
@@ -299,6 +299,9 @@ class Persistent(object):
         self.__create_index(self.users, 'screen_name', ASCENDING, False)
 
         self.social_objects = self.database['social_objects']
+        self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
+
+        self.content_objects = self.database['content_objects']
         self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
 
         self.not_loaded_users = self.database['not_loaded_users']
@@ -436,6 +439,11 @@ class Persistent(object):
         result = self._save_or_update_object(self.social_objects, s_object['sn_id'], s_object)
         return result
 
+    def save_content_object(self, s_object):
+        result = self._save_or_update_object(self.content_objects, s_object['sn_id'], s_object)
+        return result
+
+
     def retrieve_relations_for_diff(self, from_id, relation_type):
         result = [int(el) for el in self.redis.get_relations_and_remove(from_id, relation_type)]
         return result
@@ -492,6 +500,20 @@ class Persistent(object):
         if result:
             return result.get('update_date')
         return None
+
+    def save_object_batch(self, object_batch):
+        """
+        сохраняет список объектов
+        """
+        for object in object_batch:
+            if isinstance(object, APIMessage):
+                self.save_message(object)
+            elif isinstance(object, APIContentObject):
+                self.save_content_object(object)
+            elif isinstance(object, APISocialObject):
+                self.save_social_object(object)
+            else:
+                log.warn('object have not supported entity\n%s' % object)
 
     def _save_or_update_object(self, sn_object, sn_id, object_data):
         """

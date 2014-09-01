@@ -81,6 +81,7 @@ class APIContentObject(dict):
     def sn_id(self):
         return self.get('sn_id')
 
+
 class APISocialObject(APIContentObject):
     def __init__(self, data_dict):
         super(APISocialObject, self).__init__(data_dict)
@@ -119,4 +120,6 @@ class APIMessage(APIContentObject):
     def __init__(self, data_dict):
         super(APIMessage, self).__init__(data_dict)
 
-
+    @property
+    def user_id(self):
+        return self.get('user').get('sn_id')

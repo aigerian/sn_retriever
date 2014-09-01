@@ -1,23 +1,35 @@
 # coding=utf-8
+__author__ = '4ikist'
+
 import datetime
 import random
 from time import sleep
+import json
+import re
+import urlparse
+from lxml import html
+import requests
+
 from properties import certs_path, vk_access_credentials, vk_pass, vk_user_fields, logger, sleep_time_short, \
     vk_logins, vk_group_fields
 from contrib.api.entities import API, APIException, APIUser, APIMessage, APIContentObject, APISocialObject
 
-import json
-import re
-import urlparse
 
-from lxml import html
-import requests
-# TODO преобразовывать минимально весь текст в нормальный вид
 def r(string):
     return string.replace('<br>', '\n')
 
 
-__author__ = '4ikist'
+user_id_re = re.compile('id\d+')
+
+
+def get_mentioned(text):
+    """
+    находит все идентификаторы в тексте такие: [id1234567|Имя Фамилия] либо нормальные
+    :param text: в чем искать
+    :return: список 1234567
+    """
+    return [el[3:-1] if 'id' in el else el[1:] for el in re.findall('\[id\d+\||\@[^ ]+', text)]
+
 
 comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
                   'photo': {'cmd': 'photos', 'id': 'photo'},
@@ -259,16 +271,20 @@ class VK_API(API):
             content_objects.append(VK_APIContentObject({'sn_id': topic.get('id') or topic.get('tid'),
                                                         'text': topic['title'],
                                                         'create_date': unix_time(topic['created']),
-                                                        'change_date': unix_time(topic['updated'])}))
+                                                        'change_date': unix_time(topic['updated']),
+                                                        'type': 'group_topic'}))
             related_users.add(topic['created_by'])
 
         return message_results, content_objects, list(related_users)
 
     def get_comments(self, owner_id, entity_id, entity_type='wall'):
         """
-        :param entity_id: the identification of post from wall of user who have -
-        :param owner_id: this id
-        :return: array of comments with who, when and text information
+        Извлекает комментарии для сущности с идентификатором entity_id, сделанной пользователем с идентификатором entity_id
+        и типом сущности (wall, note, video, photo)
+        :param entity_id:
+        :param owner_id:
+        :return: список APIMessage у которых есть поле comment_for (для чего этот комментарий)
+        а также sn_id который состоит 'user who create object _ object id _ comment id _ user who commented'
         """
 
         command = '%s.getComments' % comments_names[entity_type]['cmd']
@@ -285,7 +301,8 @@ class VK_API(API):
                                       **kwargs)
         result = []
         for comment_el in comment_result:
-            comment_el['sn_id'] = '%s_%s' % (entity_id, comment_el.get('cid'))
+            comment_el['sn_id'] = '%s_%s_%s_%s' % (owner_id, entity_id, comment_el.get('cid'), comment_el.get('from_id'))
+            # comment_el['sn_id_description'] = 'user who create object, object id, comment id, user who commented'
             comment_el['text'] = comment_el.get('message') or comment_el.get('text')
             comment = VK_APIMessage(comment_el,
                                     comment_for={'type': entity_type, 'id': entity_id, 'owner_id': owner_id},
@@ -350,6 +367,7 @@ class VK_API(API):
                 try:
                     comment['likers'] = self.get_likers_ids(comment_type, comment['user']['sn_id'], comment.comment_id)
                     likers.extend(comment['likers'])
+                    comment.pop('likes')
                 except APIException as e:
                     self.log.error(e)
                     self.log.info('can not load comment likes for comment %s' % comment.sn_id)
@@ -448,6 +466,7 @@ class VK_API(API):
 
 
     def get_notes(self, user_id):
+        #TODO create returned related users
         notes_result = []
         comments = []
 
@@ -476,8 +495,11 @@ class VK_API(API):
 
     def get_wall_posts(self, user_id):
         """
-        :param user_id:
-        :return:
+        Извлекает достойные посты со стены пользователя и преобразывавет в сущности системы, а именно:
+        VK_APIMessage.
+        Достойность измеряется наличием текста, комментариев или лайков.
+        :param user_id: идентификатор пользователя
+        :return: список сообщений со стены, комментарии к этим сообщениям, связанные пользователи с именем связи
         """
 
         def get_reposts(post_id):
@@ -493,7 +515,7 @@ class VK_API(API):
 
         wall_post_result = []
         comments = []
-        likers = []
+        related_users = {'likes': [], 'comments': [], 'reposts': [], 'mentioned': []}
         try:
             result = self.get_all('wall.get',
                                   batch_size=100,
@@ -501,82 +523,51 @@ class VK_API(API):
                                   count_process=self.array_count_process,
                                   **{'owner_id': user_id, 'filter': 'all', })
             for wall_post in result:
-                content_object = {'sn_id': '_'.join(['wall', str(user_id), str(wall_post['id'])])}
                 # если пост стоящий
                 if len(wall_post['text']) > 0 or \
                                 wall_post['reposts']['count'] > 0 or \
                                 wall_post['likes']['count'] > 0 or \
                                 wall_post['comments']['count'] > 0:
 
+                    content_object = {'sn_id': '_'.join(['wall', str(user_id), str(wall_post['id'])]),
+                                      'user': {'sn_id': user_id},}
+
                     if wall_post['likes']['count'] != 0:
                         wall_post_likers = self.get_likers_ids('post', user_id, wall_post['id'])
                         content_object['likers'] = wall_post_likers
-                        likers.extend(wall_post_likers)
+                        related_users['likes'].extend(wall_post_likers)
                     if wall_post['comments']['count'] != 0:
                         wall_post_comments = self.get_comments(user_id, wall_post['id'], 'wall')
-                        comments_likers = self._fill_comment_likers(wall_post_comments)
-                        likers.extend(comments_likers)
+                        related_users['comments'].extend([el.user_id for el in wall_post_comments])
+                        self._fill_comment_likers(wall_post_comments)
                         comments.extend(wall_post_comments)
-
+                        related_users['likes'].extend([el['likers'] for el in wall_post_comments if
+                                                       el.user_id == user_id and el['likes']['count'] != 0])
                     if wall_post['reposts']['count'] != 0:
-                        content_object['reposts'] = get_reposts(wall_post['id'])
-
+                        reposts = get_reposts(wall_post['id'])
+                        content_object['reposts'] = reposts
+                        related_users['reposts'].extend([el['user'] for el in reposts])
+                    related_users['mentioned'].extend(get_mentioned(wall_post['text']))
                     post = VK_APIMessage(dict(content_object,
-                                              **{'text': wall_post['text'],
-                                                 'type': 'wall_post',
-                                                 'uid': user_id,
+                                              **{'text': r(wall_post['text']),
+                                                 'type': 'wall',
+                                                 'post_id':wall_post['id'],
                                                  'date': wall_post['date']}))
                     wall_post_result.append(post)
 
         except APIException as e:
             self.log.info('can not load comments/likers of wall posts for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return wall_post_result, comments, likers
+        return wall_post_result, comments, exclude_owner_from_related_users(related_users, user_id)
 
-        # def get_content_entities(self, user_id):
-        # """
-        # Возвращает объекты фотографий, видео, записок и записей на стене с идентификаторами лайкнувших людей
-        # а также, комментарии (также с идентификаторами лайкнувших)
-        #
-        # :param user_id: идентификатор пользователя (int)
-        # :return:
-        # """
-        #
-        # def retrieve_likers(objects):
-        # result = []
-        # for el in objects:
-        # result.extend(el.get('likers', []))
-        #         return result
-        #
-        #     entities = {}
-        #     comments = []
-        #     likers = []
-        #
-        #     photos, photos_comments = self.get_photos(user_id)
-        #     entities['photos'] = photos
-        #     comments.extend(photos_comments)
-        #     likers.extend(retrieve_likers(photos))
-        #     likers.extend(retrieve_likers(photos_comments))
-        #
-        #     videos, videos_comments = self.get_videos(user_id)
-        #     entities['videos'] = videos
-        #     comments.extend(videos_comments)
-        #     likers.extend(retrieve_likers(videos))
-        #     likers.extend(retrieve_likers(videos_comments))
-        #
-        #     notes, notes_comments = self.get_notes(user_id)
-        #     entities['notes'] = notes
-        #     comments.extend(notes_comments)
-        #     likers.extend(retrieve_likers(notes))
-        #     likers.extend(retrieve_likers(notes_comments))
-        #
-        #     wall_posts, wall_posts_comments = self.get_wall_posts(user_id)
-        #     entities['wall_posts'] = wall_posts
-        #     comments.extend(wall_posts_comments)
-        #     likers.extend(retrieve_likers(wall_posts))
-        #     likers.extend(retrieve_likers(wall_posts_comments))
-        #
-        #     return entities, comments, list(set(likers))
+
+def exclude_owner_from_related_users(related_users, owner_user_id):
+    for k, v in related_users.iteritems():
+        updated_list = list(set(v))
+        if owner_user_id in updated_list:
+            updated_list.remove(owner_user_id)
+        related_users[k] = updated_list
+    return related_users
 
 
 class VK_APIUser(APIUser):
@@ -603,7 +594,8 @@ class VK_APIMessage(APIMessage):
         data_dict.pop('online', None)
         data_dict.pop('uid', None)
         data_dict['source'] = 'vk'
-        data_dict['user'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
+        if data_dict.get('user', None) is None:
+            data_dict['user'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
         if not 'sn_id' in data_dict:
             data_dict['sn_id'] = data_dict.pop('cid', None) or data_dict.pop('id', None)
         data_dict['created_at'] = datetime.datetime.fromtimestamp(int(data_dict.pop('date')))
