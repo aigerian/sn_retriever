@@ -141,7 +141,9 @@ class VK_API(API):
             self.log.info(
                 'will change access token for \nmethod: %s\nparams: %s\nbecause: %s' % (method_name, str(kwargs), e))
             self.access_token = self.token_holder.get_token(self.access_token)
+            self.log.info('now access token by user: %s [%s]' % (self.access_token, self.token_holder.current_login))
 
+        change_token_succession = 0
         while 1:
             params = dict({'access_token': self.access_token}, **kwargs)
             result = requests.get('%s%s' % (self.base_url, method_name), params=params)
@@ -152,7 +154,15 @@ class VK_API(API):
                 continue
             if 'error' in result_object:
                 if result_object['error']['error_code'] == 6:
-                    # change access token and try
+                    # if many request per second
+                    change_token(result_object['error']['error_msg'])
+                    continue
+                elif result_object['error']['error_code'] == 7:
+                    # if permission denied
+                    if change_token_succession >= len(vk_logins):
+                        raise APIException(result_object)
+                    else:
+                        change_token_succession += 1
                     change_token(result_object['error']['error_msg'])
                     continue
                 else:
@@ -162,58 +172,67 @@ class VK_API(API):
     def get_all(self, method_name, batch_size=200, items_process=lambda x: x['items'],
                 count_process=lambda x: x['count'], **kwargs):
         """
-        getting all items
+        getting all items by batch size
         :parameter items_process function returned list of items from result
         :parameter count_process function returned one digit equals of count from result
-        :returns list of all items
+        :returns generator by all items
         """
         kwargs['count'] = batch_size
         first_result = self.get(method_name, **kwargs)
+        if not len(first_result):
+            return
         result = items_process(first_result)
         count = count_process(first_result)
         iterations = count / batch_size if count > batch_size else 0
-
+        for el in result:
+            yield el
         for el in range(1, iterations + 1):
             kwargs['offset'] = el * batch_size
             next_result = items_process(self.get(method_name, **kwargs))
-            result.extend(next_result)
+            for el in next_result:
+                yield el
 
-        return result
 
     def get_friends(self, user_id):
         command = 'friends.get'
         kwargs = {'order': 'name',
                   'fields': vk_user_fields,
                   'user_id': user_id}
-        result = self.get(command, **kwargs)
-        return result
+        result = self.get_all(command, batch_size=100, items_process=lambda x: x, count_process=lambda x: len(x),
+                              **kwargs)
+        return [VK_APIUser(el) for el in result]
 
     def get_followers(self, user_id):
         command = 'users.getFollowers'
         kwargs = {
             'fields': vk_user_fields,
             'user_id': user_id}
-        result = self.get_all(command, batch_size=1000, **kwargs)
-        return result
+        result = self.get_all(command, batch_size=100, **kwargs)
+        return [VK_APIUser(el) for el in result]
 
     def get_subscriptions(self, user_id):
         command = 'subscriptions.get'
-        result = self.get_all(command, batch_size=1000,
+        result = self.get_all(command, batch_size=100,
                               items_process=lambda x: x['users'],
                               **{'uid': user_id})
-        return result
+        return [VK_APIUser(el) for el in result]
 
     def get_subscription_followers(self, user_id):
+        """
+        тоже самое что и followers только возвращает идишники
+        :param user_id:
+        :return: sn_ids of subscription followers
+        """
         command = 'subscriptions.getFollowers'
         result = self.get_all(command, batch_size=1000,
                               items_process=lambda x: x['users'],
                               **{'uid': user_id})
-        return result
+        return list(result)
 
     def get_groups(self, user_id):
         def get_members(group_id):
-            return self.get_all('groups.getMembers', batch_size=1000, items_process=lambda x: x['users'],
-                                **{'sort': 'time_asc', 'gid': group_id})
+            return list(self.get_all('groups.getMembers', batch_size=1000, items_process=lambda x: x['users'],
+                                     **{'sort': 'time_asc', 'gid': group_id}))
 
         result = []
         command = 'groups.get'
@@ -303,7 +322,6 @@ class VK_API(API):
         for comment_el in comment_result:
             comment_el['sn_id'] = '%s_%s_%s_%s' % (
                 owner_id, entity_id, comment_el.get('cid'), comment_el.get('from_id'))
-            # comment_el['sn_id_description'] = 'user who create object, object id, comment id, user who commented'
             comment_el['text'] = comment_el.get('message') or comment_el.get('text')
             comment = VK_APIMessage(comment_el,
                                     comment_for={'type': entity_type, 'id': entity_id, 'owner_id': owner_id},
@@ -325,7 +343,7 @@ class VK_API(API):
                                   items_process=lambda x: x['users'],
                                   count_process=lambda x: x['count'],
                                   **kwargs)
-            return result
+            return list(result)
         except APIException as e:
             self.log.error(e)
             self.log.info('can not load likers ids for %s' % object_type)
@@ -485,7 +503,7 @@ class VK_API(API):
                 related_users['mentioned'].extend(get_mentioned(note.text))
 
                 if note_el['ncom'] != 0:
-                    note_comments = self.get_comments(user_id, note_el['id'], 'note')
+                    note_comments = self.get_comments(user_id, note.sn_id, 'note')
                     self._fill_comment_likers(note_comments, 'note')
                     comments.extend(note_comments)
                     related_users['comments'].extend([el.user_id for el in note_comments])
@@ -494,7 +512,7 @@ class VK_API(API):
             self.log.exception(e)
             self.log.info('can not load comments/likers of notes for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return notes_result, comments, exclude_owner_from_related_users(related_users)
+        return notes_result, comments, exclude_owner_from_related_users(related_users, user_id)
 
     def get_wall_posts(self, user_id):
         """
@@ -593,9 +611,6 @@ class VK_APIUser(APIUser):
 
 class VK_APIMessage(APIMessage):
     def __init__(self, data_dict, created_at_format=None, comment_for=None, comment_id=None):
-        data_dict.pop('cid', None)
-        data_dict.pop('online', None)
-        data_dict.pop('uid', None)
         data_dict['source'] = 'vk'
         if data_dict.get('user', None) is None:
             data_dict['user'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
@@ -605,6 +620,11 @@ class VK_APIMessage(APIMessage):
         if comment_for:
             data_dict['comment_for'] = comment_for
             data_dict['comment_id'] = comment_id
+        data_dict['user_id'] = data_dict['user']['sn_id']
+
+        data_dict.pop('cid', None)
+        data_dict.pop('online', None)
+        data_dict.pop('uid', None)
         super(VK_APIMessage, self).__init__(data_dict)
 
     @property

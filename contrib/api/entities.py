@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+from bson import DBRef
 from contrib.api.proxy import ProxyHandler
 
 from requests import Session, ConnectionError
@@ -122,7 +123,13 @@ class APIMessage(APIContentObject):
 
     @property
     def user_id(self):
-        return self.get('user').get('sn_id')
+        user = self.get('user')
+        if user:
+            if isinstance(user, dict):
+                return self.get('user').get('sn_id')
+            else:
+                return self.get('user_id')
+        raise AttributeError('in any message you must have user owner!')
 
     @property
     def text(self):

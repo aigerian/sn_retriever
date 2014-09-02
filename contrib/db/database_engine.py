@@ -424,11 +424,17 @@ class Persistent(object):
         saving message. message must be a dict with field user, this field must be a DbRef or dict ith sn_id of some user in db
         """
         if not isinstance(message.get('user'), DBRef):
-            user_sn_id = message.get('user').get('sn_id')
+            try:
+                user_sn_id = int(message.get('user').get('sn_id'))
+            except ValueError:
+                user_sn_id = message.get('user').get('sn_id')
+            if user_sn_id is None:
+                raise DataBaseMessageException('User sn_id can not be None')
             user = self.get_user(sn_id=user_sn_id)
             if user:
                 user_ref = self.get_user_ref(user)
                 message['user'] = user_ref
+                message['user_id'] = user_sn_id
             else:
                 raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
 
