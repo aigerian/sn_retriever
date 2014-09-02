@@ -153,7 +153,7 @@ class VK_API(API):
             if 'error' in result_object:
                 if result_object['error']['error_code'] == 6:
                     # change access token and try
-                    change_token(result['error'])
+                    change_token(result_object['error']['error_msg'])
                     continue
                 else:
                     raise APIException(result_object)
@@ -301,12 +301,14 @@ class VK_API(API):
                                       **kwargs)
         result = []
         for comment_el in comment_result:
-            comment_el['sn_id'] = '%s_%s_%s_%s' % (owner_id, entity_id, comment_el.get('cid'), comment_el.get('from_id'))
+            comment_el['sn_id'] = '%s_%s_%s_%s' % (
+                owner_id, entity_id, comment_el.get('cid'), comment_el.get('from_id'))
             # comment_el['sn_id_description'] = 'user who create object, object id, comment id, user who commented'
             comment_el['text'] = comment_el.get('message') or comment_el.get('text')
             comment = VK_APIMessage(comment_el,
                                     comment_for={'type': entity_type, 'id': entity_id, 'owner_id': owner_id},
                                     comment_id=comment_el.get('cid'))
+            comment['mentioned'] = get_mentioned(comment_el['text'])
             result.append(comment)
         return result
 
@@ -381,7 +383,7 @@ class VK_API(API):
         """
         comments = []
         result = []
-        related_users = []
+        related_users = {'comments': [], 'likes': [], 'mentioned': []}
         try:
             photo_result = self.get_all("photos.getAll", batch_size=200,
                                         items_process=self.array_item_process,
@@ -401,15 +403,15 @@ class VK_API(API):
                                              'url': photo_el['sizes'][-1]['src']})
                 if photo_el.get('likes').get('count') != 0:
                     photo['likers'] = self.get_likers_ids('photo', user_id, photo.sn_id)
-                    related_users.extend(photo['likers'])
+                    related_users['likes'].extend(photo['likers'])
                 result.append(photo)
                 if photo_el['aid'] > 0:
                     albums.add(photo_el['aid'])
                 photo_comments = self.get_comments(user_id, photo.sn_id, 'photo')
-                likers = self._fill_comment_likers(photo_comments, 'photo_comment')
+                self._fill_comment_likers(photo_comments, 'photo_comment')
                 comments.extend(photo_comments)
-                related_users.extend(likers)
-
+                related_users['comments'].extend([el.user_id for el in photo_comments])
+                related_users['mentioned'].extend(get_mentioned(photo_el['text']))
             albums_result = self.get_all('photos.getAlbums', batch_size=100,
                                          count_process=lambda x: len(x), items_process=lambda x: x,
                                          **{'owner_id': user_id, 'album_ids': ','.join([str(el) for el in albums]),
@@ -421,18 +423,18 @@ class VK_API(API):
                                                    'text': '%s\n%s' % (album['title'], album.get('description')),
                                                    'create_date': unix_time(album['created']),
                                                    'change_date': unix_time(album['updated'])}))
+                related_users['mentioned'].extend(get_mentioned(album['title'] + album.get('description')))
         except APIException as e:
             self.log.exception(e)
             self.log.info('can not load comments/likers of photos for user_id: %s\nbecause:%s' % (user_id, e))
 
-        related_users.remove(user_id)
-        return result, comments, list(set(related_users))
+        return result, comments, exclude_owner_from_related_users(related_users, user_id)
 
 
     def get_videos(self, user_id):
         comments = []
         result = []
-        related_users = []
+        related_users = {'comments': [], 'likes': [], 'mentioned': []}
         try:
             video_result = self.get_all('video.get',
                                         batch_size=100,
@@ -449,27 +451,26 @@ class VK_API(API):
                 if video_el.get('likes').get('count') != 0:
                     video_likers = self.get_likers_ids('video', user_id, video.sn_id)
                     video['likers'] = video_likers
-                    related_users.extend(video_likers)
+                    related_users['likes'].extend(video_likers)
                 result.append(video)
 
                 if video_el.get('comments') != 0:
                     video_comments = self.get_comments(user_id, video.sn_id, 'video')
-                    likers = self._fill_comment_likers(video_comments, 'video_comment')
+                    self._fill_comment_likers(video_comments, 'video_comment')
                     comments.extend(video_comments)
-                    related_users.extend(likers)
-
+                    related_users['comments'].extend([el.user_id for el in video_comments])
+                related_users['mentioned'].extend(get_mentioned(video_el['title'] + video_el['description']))
         except APIException as e:
             self.log.exception(e)
             self.log.info('can not load comments/likers of videos for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return result, comments, list(set(related_users))
+        return result, comments, exclude_owner_from_related_users(related_users, user_id)
 
 
     def get_notes(self, user_id):
-        #TODO create returned related users
         notes_result = []
         comments = []
-
+        related_users = {'comments': [], 'mentioned': []}
         try:
             result = self.get_all('notes.get',
                                   batch_size=100,
@@ -481,17 +482,19 @@ class VK_API(API):
                     note_el['id'] = note_el.pop('nid')
                 note = VK_APIMessage(note_el)
                 notes_result.append(note)
+                related_users['mentioned'].extend(get_mentioned(note.text))
 
                 if note_el['ncom'] != 0:
                     note_comments = self.get_comments(user_id, note_el['id'], 'note')
                     self._fill_comment_likers(note_comments, 'note')
                     comments.extend(note_comments)
+                    related_users['comments'].extend([el.user_id for el in note_comments])
 
         except APIException as e:
             self.log.exception(e)
             self.log.info('can not load comments/likers of notes for user_id: %s\nbecause:%s' % (user_id, e))
 
-        return notes_result, comments
+        return notes_result, comments, exclude_owner_from_related_users(related_users)
 
     def get_wall_posts(self, user_id):
         """
@@ -530,7 +533,7 @@ class VK_API(API):
                                 wall_post['comments']['count'] > 0:
 
                     content_object = {'sn_id': '_'.join(['wall', str(user_id), str(wall_post['id'])]),
-                                      'user': {'sn_id': user_id},}
+                                      'user': {'sn_id': user_id}, }
 
                     if wall_post['likes']['count'] != 0:
                         wall_post_likers = self.get_likers_ids('post', user_id, wall_post['id'])
@@ -551,7 +554,7 @@ class VK_API(API):
                     post = VK_APIMessage(dict(content_object,
                                               **{'text': r(wall_post['text']),
                                                  'type': 'wall',
-                                                 'post_id':wall_post['id'],
+                                                 'post_id': wall_post['id'],
                                                  'date': wall_post['date']}))
                     wall_post_result.append(post)
 

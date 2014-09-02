@@ -23,21 +23,33 @@ def persist_user_objects(retriever_function, user_id):
             commented_user = vk.get_user(comment.user_id)
             persist.save_user(commented_user)
         persist.save_message(comment)
+        if 'likers' in comment:
+            for comment_liker in comment.get('likers'):
+                output_users.append(comment_liker)
+                persist.save_relation(comment_liker, comment.user_id, 'likes')
+        for mentioned_user in comment.get('mentioned'):
+            output_users.append(mentioned_user)
+            persist.save_relation(comment.user_id, mentioned_user, 'mentioned')
 
     for rel_type, related_users_ids in related_users.iteritems():
         for related_user_id in related_users_ids:
-            persist.save_relation(user_id, related_user_id, rel_type)
+            if rel_type == 'mentioned':
+                persist.save_relation(user_id, related_user_id, rel_type)
+            else:
+                persist.save_relation(related_user_id, user_id, rel_type)
         output_users.extend(related_users_ids)
     return output_users
 
 
 def persist_all_user_data_and_retrieve_friends_ids(user_id):
-    user = persist.get_user(sn_id=user_id) or vk.get_user(user_id)
+    user = persist.get_user(sn_id=user_id, screen_name=user_id) or vk.get_user(user_id)
     persist.save_user(user)
     related_users = []
     related_users.extend(persist_user_objects(vk.get_wall_posts, user.sn_id))
     related_users.extend(persist_user_objects(vk.get_photos, user.sn_id))
     related_users.extend(persist_user_objects(vk.get_videos, user.sn_id))
+    related_users.extend(persist_user_objects(vk.get_notes, user.sn_id))
+    vk.get_followers()
     return list(set(related_users))
 
     # cobs, coms, ru2 = vk.get_photos(user.sn_id)
@@ -48,9 +60,9 @@ def persist_all_user_data_and_retrieve_friends_ids(user_id):
     # related_users.extend(ru2)
     # cobs, coms, ru3 = vk.get_videos(user.sn_id)
     # for cob in cobs:
-    #     persist.save_content_object(cob)
+    # persist.save_content_object(cob)
     # for com in coms:
-    #     persist.save_message(com)
+    # persist.save_message(com)
     #
     # notes, comments = vk.get_notes(user.sn_id)
     # for note in chain(notes,comments):

@@ -123,3 +123,7 @@ class APIMessage(APIContentObject):
     @property
     def user_id(self):
         return self.get('user').get('sn_id')
+
+    @property
+    def text(self):
+        return self.get('text')
