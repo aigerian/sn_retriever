@@ -74,14 +74,16 @@ def persist_all_user_data_and_retrieve_related(user_id):
     user = persist.get_user(sn_id=user_id, screen_name=user_id) or vk.get_user(user_id)
     persist.save_user(user)
     related_users = []
-    related_users.extend(persist_user_objects(vk.get_wall_posts, user.sn_id))
-    related_users.extend(persist_user_objects(vk.get_photos, user.sn_id))
-    related_users.extend(persist_user_objects(vk.get_videos, user.sn_id))
-    related_users.extend(persist_user_objects(vk.get_notes, user.sn_id))
-    related_users.extend(persist_user_relations(vk.get_followers, user.sn_id, 'follower', back=True))
-    related_users.extend(persist_user_relations(vk.get_subscriptions, user.sn_id, 'follower'))
-    related_users.extend(persist_user_relations(vk.get_friends, user.sn_id, 'friend'))
-
+    # related_users.extend(persist_user_objects(vk.get_wall_posts, user.sn_id))
+    # related_users.extend(persist_user_objects(vk.get_photos, user.sn_id))
+    # related_users.extend(persist_user_objects(vk.get_videos, user.sn_id))
+    # related_users.extend(persist_user_objects(vk.get_notes, user.sn_id))
+    # related_users.extend(persist_user_relations(vk.get_followers, user.sn_id, 'follower', back=True))
+    # related_users.extend(persist_user_relations(vk.get_subscriptions, user.sn_id, 'follower'))
+    # related_users.extend(persist_user_relations(vk.get_friends, user.sn_id, 'friend'))
+    groups = vk.get_groups(user.sn_id)
+    for group in groups:
+        vk.get_group_data(group.sn_id)
     return list(set(related_users))
 
 

@@ -24,7 +24,7 @@ user_id_re = re.compile('id\d+')
 
 def get_mentioned(text):
     """
-    находит все идентификаторы в тексте такие: [id1234567|Имя Фамилия] либо нормальные
+    находит все идентификаторы в тексте такие: [id1234567|Имя Фамилия] либо нормальные @имя
     :param text: в чем искать
     :return: список 1234567
     """
@@ -248,21 +248,20 @@ class VK_API(API):
                 group['members'] = members
             except APIException as e:
                 self.log.warn('can not load group members :( for group [%s]' % group.get('name'))
-            group.pop('is_admin')
-            group.pop('is_member')
-            group['source'] = 'vk'
             result.append(APISocialObject({'sn_id': group['gid'],
                                            'private': group['is_closed'],
                                            'name': group['name'],
                                            'screen_name': group['screen_name'],
                                            'type': group['type'],
-                                           'known_members': group['members'] if group.get('members') else [user_id]}))
+                                           'source':'vk'
+            }))
         return result
 
     def get_group_data(self, group_id):
         message_results = []
         content_objects = []
         related_users = set()
+        relations = []
         topic_result = self.get_all('board.getTopics', batch_size=100,
                                     count_process=lambda x: x['topics'][0],
                                     items_process=lambda x: x['topics'][1:],
@@ -275,18 +274,20 @@ class VK_API(API):
                                                items_process=lambda x: x['comments'][1:],
                                                **{'group_id': group_id, 'topic_id': topic.get('id') or topic.get('tid'),
                                                   'need_likes': 1, })
+                topic_id = topic.get('id') or topic.get('tid')
                 for topic_comment in comments_result:
-                    related_users.add(topic_comment['from_id'])
-                    # if topic_comment['likes']['count'] != 0:
-                    # topic_comment['likers'] = self.get_likers_ids('topic_comment', topic_comment['from_id'],
-                    # topic_comment['id'])
+                    topic_user_id = topic_comment['from_id']
+                    related_users.add(topic_user_id)
+                    relations.append((topic_user_id, 'subscribe', group_id))
                     message_results.append(
                         VK_APIMessage(
-                            dict({'sn_id': "%s_%s" % (topic_comment['id'], topic.get('id') or topic.get('tid')),
+                            dict({'sn_id': "%s_%s" % (topic_comment['id'],topic_id),
                                   'comment_id': topic_comment['id']}, **topic_comment),
-                            comment_for={'type': 'group_topic', 'group_id': group_id,
-                                         'id': topic.get('id') or topic.get('tid')})
+                            comment_for={'type': 'group_topic',
+                                         'group_id': group_id,
+                                         'topic_id': topic_id})
                     )
+                    relations.extend([(topic_user_id,'mentioned', el) for el in get_mentioned(topic_comment['text'])])
             content_objects.append(VK_APIContentObject({'sn_id': topic.get('id') or topic.get('tid'),
                                                         'text': topic['title'],
                                                         'create_date': unix_time(topic['created']),
@@ -294,7 +295,7 @@ class VK_API(API):
                                                         'type': 'group_topic'}))
             related_users.add(topic['created_by'])
 
-        return message_results, content_objects, list(related_users)
+        return message_results, content_objects, list(related_users), relations
 
     def get_comments(self, owner_id, entity_id, entity_type='wall'):
         """
@@ -619,7 +620,7 @@ class VK_APIMessage(APIMessage):
         data_dict['created_at'] = datetime.datetime.fromtimestamp(int(data_dict.pop('date')))
         if comment_for:
             data_dict['comment_for'] = comment_for
-            data_dict['comment_id'] = comment_id
+            data_dict['comment_id'] = comment_id or data_dict['comment_id']
         data_dict['user_id'] = data_dict['user']['sn_id']
 
         data_dict.pop('cid', None)
