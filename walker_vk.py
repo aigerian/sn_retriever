@@ -24,28 +24,18 @@ def persist_user_objects(retriever_function, user_id):
     :return: список идентификаторов пользователей которые как-либо связанны с искомым (user_id)
     """
     output_users = []
-    posts, comments, related_users = retriever_function(user_id)
-    persist.save_object_batch(posts)
-    for comment in comments:
-        if comment.user_id != user_id and not persist.get_user(sn_id=user_id):
-            commented_user = vk.get_user(comment.user_id)
-            persist.save_user(commented_user)
-        persist.save_message(comment)
-        if 'likers' in comment:
-            for comment_liker in comment.get('likers'):
-                output_users.append(comment_liker)
-                persist.save_relation(comment_liker, comment.user_id, 'likes')
-        for mentioned_user in comment.get('mentioned'):
-            output_users.append(mentioned_user)
-            persist.save_relation(comment.user_id, mentioned_user, 'mentioned')
+    def add_new_user(new_user_id):
+        if new_user_id!=user_id:
+            new_user = vk.get_user(new_user_id)
+            persist.save_user(new_user)
+            output_users.append(new_user_id)
 
-    for rel_type, related_users_ids in related_users.iteritems():
-        for related_user_id in related_users_ids:
-            if rel_type == 'mentioned':
-                persist.save_relation(user_id, related_user_id, rel_type)
-            else:
-                persist.save_relation(related_user_id, user_id, rel_type)
-        output_users.extend(related_users_ids)
+    contentResult = retriever_function(user_id)
+    for from_id, rel_type, to_id in contentResult.relations:
+        add_new_user(from_id), add_new_user(to_id)
+        persist.save_relation(from_id,rel_type,to_id)
+
+    persist.save_object_batch(contentResult.get_content_to_persist())
     return output_users
 
 
@@ -74,8 +64,8 @@ def persist_all_user_data_and_retrieve_related(user_id):
     user = persist.get_user(sn_id=user_id, screen_name=user_id) or vk.get_user(user_id)
     persist.save_user(user)
     related_users = []
-    # related_users.extend(persist_user_objects(vk.get_wall_posts, user.sn_id))
-    # related_users.extend(persist_user_objects(vk.get_photos, user.sn_id))
+    related_users.extend(persist_user_objects(vk.get_wall_posts, user.sn_id))
+    #related_users.extend(persist_user_objects(vk.get_photos, user.sn_id))
     # related_users.extend(persist_user_objects(vk.get_videos, user.sn_id))
     # related_users.extend(persist_user_objects(vk.get_notes, user.sn_id))
     # related_users.extend(persist_user_relations(vk.get_followers, user.sn_id, 'follower', back=True))
