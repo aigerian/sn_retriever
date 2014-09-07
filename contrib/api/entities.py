@@ -82,10 +82,6 @@ class APIContentObject(dict):
     def sn_id(self):
         return self.get('sn_id')
 
-    def __eq__(self, other):
-        if isinstance(other, dict):
-            return self == other
-        return False
 
 
 class APISocialObject(APIContentObject):

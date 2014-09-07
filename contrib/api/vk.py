@@ -17,20 +17,18 @@ from properties import certs_path, vk_access_credentials, vk_pass, vk_user_field
 from contrib.api.entities import API, APIException, APIUser, APIMessage, APIContentObject, APISocialObject
 
 
-def r(string):
-    return string.replace('<br>', '\n')
-
-
-user_id_re = re.compile('id\d+')
+member_type_rel = ('member', 'request', 'invitation')
 
 
 def get_mentioned(text):
     """
-    находит все идентификаторы в тексте такие: [id1234567|Имя Фамилия] либо нормальные @имя
+    находит все идентификаторы в тексте такие: [id1234567|Имя Фамилия]
     :param text: в чем искать
     :return: список 1234567
     """
-    return [el[3:-1] if 'id' in el else el[1:] for el in re.findall('\[id\d+\||\@[^ ]+', text)]
+    if text is not None:
+        return [el[3:-1] if 'id' in el else el[1:] for el in re.findall('\[id\d+\|?\:?', text)]
+    return []
 
 
 comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
@@ -72,7 +70,7 @@ class AccessTokenHolder(object):
         times.sort()
         delta = sleep_time_short() - times[-1]
         if delta > 0:
-            self.log.info('will sleep %s seconds' % (times[-1] - delta))
+            self.log.info('will sleep %s seconds' % abs(times[-1] - delta))
             sleep(abs(times[-1] - delta))
         result_token = self.__check_for_update(candidates[times[-1]])
         self.current_login = result_token['login']
@@ -259,39 +257,57 @@ class VK_API(API):
             }))
         return result
 
+    def check_members(self, candidates, group_id):
+        relations = []
+        for commentators_batch_name in _take_by(candidates, 200):
+            is_members_result = self.get('groups.isMember', user_ids=commentators_batch_name, group_id=group_id,
+                                         extended=1)
+            for el in is_members_result:
+                relation_type_ = [k for k, v in el.iteritems() if v == 1 and k in member_type_rel]
+                if len(relation_type_):
+                    relations.append((el['user_id'], relation_type_[0], group_id))
+        return relations
+
     def get_group_topic_comments(self, group_id, topic_id, topic_user_id):
         """
         Извлекает комментарии к топику в группе
         :param group_id:  идентификатор группы
         :param topic_id:  идентификатор топика
         :param topic_user_id:  идентификатор пользователя создавшего топик
-        :return: два массива: 1) собственно комментарии в виде APIMessage 2) Связи между пользователями
+        :return: два массива:
         """
-        relations = []
-        message_results = []
+        contentResult = ContentResult()
         comments_result = self.get_all('board.getComments', batch_size=100,
                                        count_process=lambda x: x['comments'][0],
                                        items_process=lambda x: x['comments'][1:],
                                        **{'group_id': group_id, 'topic_id': topic_id,
                                           'need_likes': 1, })
+        commentators = []
         for topic_comment in comments_result:
             topic_comment_user_id = topic_comment['from_id']
-            relations.append((topic_comment_user_id, 'comment', topic_user_id))
-            message_results.append(
+            commentators.append(topic_comment_user_id)
+            contentResult.add_relations((topic_comment_user_id, 'comment', topic_user_id))
+            contentResult.add_relations(
+                [(topic_comment_user_id, 'mention', el) for el in get_mentioned(topic_comment['text'])])
+            contentResult.add_comments(
                 VK_APIMessage(
                     dict({'sn_id': "%s_%s_%s" % (topic_comment['id'], topic_id, group_id),
                           'comment_id': topic_comment['id']}, **topic_comment),
-                    comment_for={'type': 'group_topic',
-                                 'group_id': group_id,
-                                 'topic_id': topic_id})
+                    comment_for={'sn_id': topic_id})
             )
-            relations.extend([(topic_comment_user_id, 'mentioned', el) for el in get_mentioned(topic_comment['text'])])
-        return message_results, relations
+            contentResult.add_relations(
+                [(topic_comment_user_id, 'mentioned', el) for el in get_mentioned(topic_comment['text'])])
+
+        contentResult.add_relations(self.check_members(commentators, group_id))
+        return contentResult
 
     def get_group_data(self, group_id):
-        comments = []
-        content = []
-        relations = []
+        """
+        Вовращает данные находящиеся в группе
+        :param group_id:
+        :return:
+        """
+        contentResult = ContentResult()
         # load group topics and comments
         topic_result = self.get_all('board.getTopics', batch_size=100,
                                     count_process=lambda x: x['topics'][0],
@@ -302,23 +318,30 @@ class VK_API(API):
             topic_user_id = topic.get('created_by')
             topic_id = topic.get('id') or topic.get('tid')
             if topic['comments'] != 0:
-                topic_comments, topic_relations = self.get_group_topic_comments(group_id, topic_id, topic_user_id)
-                relations.extend(topic_relations), comments.extend(topic_relations)
+                topic_comments_result = self.get_group_topic_comments(group_id, topic_id, topic_user_id)
+                contentResult += topic_comments_result
 
-            relations.append((topic_user_id, 'subscribe', group_id))
-            content.append(VK_APIContentObject({'sn_id': topic.get('id') or topic.get('tid'),
-                                                'text': topic['title'] + '\n' + topic.get('text'),
-                                                'create_date': unix_time(topic['created']),
-                                                'change_date': unix_time(topic['updated']),
-                                                'type': 'group_topic',
-                                                'user': {'sn_id': topic_user_id}}))
+            contentResult.add_content(VK_APIContentObject({'sn_id': topic.get('id') or topic.get('tid'),
+                                                           'text': topic['title'] + '\n' + topic.get('text', ''),
+                                                           'create_date': unix_time(topic['created']),
+                                                           'change_date': unix_time(topic['updated']),
+                                                           'type': 'group_topic',
+                                                           'user': {'sn_id': topic_user_id}}))
         # load group photos
-        photos_content, photos_comments, photos_related_users = self.get_photos(-group_id)
-        content.extend(content), comments.extend(photos_comments)
+        photos_content_result = self.get_photos(-group_id)
+        contentResult.add_relations(self.__get_members_from_result(photos_content_result.relations, contentResult.get_relations_with_type(member_type_rel,r=False), group_id))
+        video_content_result = self.get_videos(-group_id)
+        contentResult.add_relations(self.__get_members_from_result(video_content_result.relations, contentResult.get_relations_with_type(member_type_rel,r=False), group_id))
+        contentResult+=photos_content_result+video_content_result
 
-        return comments, content, relations
+        return contentResult
 
-    def get_comments(self, owner_id, entity_id, entity_type='wall', parent_sn_id=None):
+    def __get_members_from_result(self, result_relations, saved_members, group_id):
+        members_candidates = set([el[0 if int(el[2])<0 else 2] for el in result_relations])
+        members_candidates.difference_update(saved_members)
+        return self.check_members(list(members_candidates), group_id)
+
+    def get_comments(self, owner_id, entity_id, entity_type='wall', parent_sn_id=None, load_likers=True):
         """
         Извлекает комментарии для сущности с идентификатором entity_id, сделанной пользователем с идентификатором entity_id
         и типом сущности (wall, note, video, photo)
@@ -356,9 +379,11 @@ class VK_API(API):
                                     comment_id=comment_id)
             comment['mentions'] = get_mentioned(comment_el['text'])
             contentResult.add_comments(comment)
-            contentResult.add_relations([comment.user_id, 'mention', el] for el in comment['mentions'])
+            contentResult.add_relations([(comment.user_id, 'mention', el) for el in comment['mentions']])
             contentResult.add_relations((comment.user_id, 'comment', owner_id))
-            contentResult.add_relations(self._fill_comment_likers(comment, ('%s_comment' % entity_type) if entity_type!='wall' else 'comment'))
+            if comment['likes']['count'] > 0 and load_likers:
+                contentResult.add_relations(self._fill_comment_likers(comment, (
+                    '%s_comment' % entity_type) if entity_type != 'wall' else 'comment'))
 
         return contentResult
 
@@ -407,17 +432,16 @@ class VK_API(API):
         :param comments: собственно список комментариев
         :return список связей кто лайкнул комментарий
         """
-        relations = []
-        if comment['likes']['count'] != 0:
-            try:
-                likers = self.get_likers_ids(comment_type, comment.user_id, comment.comment_id)
-                if len(likers):
-                    comment['likers'] = likers
-                    relations.extend([(el, 'likes', comment.user_id) for el in comment['likers']])
-            except APIException as e:
-                self.log.error(e)
-                self.log.info('can not load comment likes for comment %s' % comment.sn_id)
-        return relations
+        try:
+            relations = []
+            likers = self.get_likers_ids(comment_type, comment.user_id, comment.comment_id)
+            if len(likers):
+                comment['likers'] = likers
+                relations.extend([(el, 'likes', comment.user_id) for el in comment['likers']])
+            return relations
+        except APIException as e:
+            self.log.error(e)
+            self.log.info('can not load comment likes for comment %s' % comment.sn_id)
 
     def get_photos(self, user_id):
         """
@@ -436,6 +460,7 @@ class VK_API(API):
         3) связи пльзователей от этих фотографий
         """
         contentResult = ContentResult()
+        for_group = user_id < 0
         try:
             photo_result = self.get_all("photos.getAll", batch_size=200,
                                         items_process=self.array_item_process,
@@ -446,22 +471,25 @@ class VK_API(API):
                                            'no_service_albums': 0})
             albums = set()
             for photo_el in photo_result:
+                photo_owner = user_id if not for_group else photo_el['user_id']
                 photo = VK_APIContentObject({'sn_id': photo_el.get('id') or photo_el.get('pid'),
                                              'type': 'photo',
-                                             'user': {'sn_id': user_id},
+                                             'user': {'sn_id': photo_owner},
                                              'parent_id': photo_el['aid'],
                                              'text': photo_el['text'],
                                              'create_date': unix_time(photo_el['created']),
                                              'url': photo_el['sizes'][-1]['src']})
+                if for_group:
+                    photo['group_id'] = user_id
                 if photo_el.get('likes').get('count') != 0:
                     photo['likers'] = self.get_likers_ids('photo', user_id, photo.sn_id)
-                    contentResult.add_relations([(el, 'likes', user_id) for el in photo['likers']])
+                    contentResult.add_relations([(el, 'likes', photo_owner) for el in photo['likers']])
                 contentResult.add_content(photo)
                 if photo_el['aid'] > 0:
                     albums.add(photo_el['aid'])
-                photo_comments_result = self.get_comments(user_id, photo.sn_id, 'photo')
+                photo_comments_result = self.get_comments(user_id, photo.sn_id, 'photo', load_likers=not for_group)
                 contentResult += photo_comments_result
-                contentResult.add_relations([(user_id, 'mention', el) for el in get_mentioned(photo_el['text'])])
+                contentResult.add_relations([(photo_owner, 'mention', el) for el in get_mentioned(photo_el['text'])])
 
             albums_result = self.get_all('photos.getAlbums', batch_size=100,
                                          count_process=lambda x: len(x), items_process=lambda x: x,
@@ -494,6 +522,7 @@ class VK_API(API):
         3) связи пльзователей от этих видео
         """
         contentResult = ContentResult()
+        for_group = user_id < 0
         try:
             video_result = self.get_all('video.get',
                                         batch_size=100,
@@ -501,24 +530,27 @@ class VK_API(API):
                                         count_process=self.array_count_process,
                                         **{'owner_id': user_id, 'extended': 1})
             for video_el in video_result:
+                video_owner_id = user_id if not for_group else video_el['user_id']
                 video = VK_APIContentObject({'sn_id': video_el.get('id') or video_el.get('vid'),
                                              'type': 'video',
-                                             'user': {'sn_id': user_id},
+                                             'user': {'sn_id': video_owner_id},
                                              'text': '%s\n%s' % (video_el['title'], video_el['description']),
                                              'create_date': unix_time(video_el['date']),
                                              'comments_count': video_el['comments'],
                                              'views_count': video_el['views']
                 })
+                if for_group:
+                    video['group_id'] = user_id
                 if video_el.get('likes').get('count') != 0:
                     video['likers'] = self.get_likers_ids('video', user_id, video.sn_id)
-                    contentResult.add_relations([(el, 'likes', user_id) for el in video['likers']])
-
+                    contentResult.add_relations([(el, 'likes', video_owner_id) for el in video['likers']])
                 if video_el.get('comments') != 0:
-                    video_comments_result = self.get_comments(user_id, video.sn_id, 'video')
+                    video_comments_result = self.get_comments(user_id, video.sn_id, 'video', load_likers=False)
                     contentResult += video_comments_result
 
                 contentResult.add_relations(
-                    [(user_id, 'mention', el) for el in get_mentioned(video_el['title'] + video_el['description'])])
+                    [(video_owner_id, 'mention', el) for el in
+                     get_mentioned(video_el['title'] + video_el['description'])])
                 contentResult.add_content(video)
 
         except APIException as e:
@@ -546,11 +578,12 @@ class VK_API(API):
             for note_el in result:
                 if 'nid' in note_el:
                     note_el['id'] = note_el.pop('nid')
-                note = VK_APIContentObject(note_el)
+                note = VK_APIMessage(note_el)
+                note['comments_count'] = int(note.pop('ncom'))
                 contentResult.add_content(note)
                 contentResult.add_relations([(user_id, 'mention', el) for el in get_mentioned(note.get('text'))])
 
-                if note_el['ncom'] != 0:
+                if note['comments_count'] != 0:
                     note_comments_result = self.get_comments(user_id, note.sn_id, 'note')
                     contentResult += note_comments_result
 
@@ -605,13 +638,13 @@ class VK_API(API):
                                                                parent_sn_id=content_object['sn_id'])
                         contentResult += wall_post_comments
                     if wall_post['reposts']['count'] != 0:
-                        reposts = self.get_reposts(user_id,wall_post['id'])
+                        reposts = self.get_reposts(user_id, wall_post['id'])
                         content_object['reposts'] = reposts
-                        contentResult.add_relations([(el['user'],'repost', user_id) for el in reposts])
-                    contentResult.add_relations([(user_id, 'mentioned',el) for el in get_mentioned(wall_post['text'])])
+                        contentResult.add_relations([(el['user'], 'repost', user_id) for el in reposts])
+                    contentResult.add_relations([(user_id, 'mentioned', el) for el in get_mentioned(wall_post['text'])])
 
                     post = VK_APIMessage(dict(content_object,
-                                              **{'text': r(wall_post['text']),
+                                              **{'text': wall_post['text'],
                                                  'type': 'wall',
                                                  'post_id': wall_post['id'],
                                                  'date': wall_post['date']}))
@@ -621,14 +654,14 @@ class VK_API(API):
             self.log.info('can not load comments/likers of wall posts for user_id: %s\nbecause:%s' % (user_id, e))
         return contentResult
 
-# derecated
-def exclude_owner_from_related_users(related_users, owner_user_id):
-    for k, v in related_users.iteritems():
-        updated_list = list(set(v))
-        if owner_user_id in updated_list:
-            updated_list.remove(owner_user_id)
-        related_users[k] = updated_list
-    return related_users
+
+import html2text
+
+
+def _process_text_fields(data):
+    for key in ['text', 'title', 'message', 'description', ]:
+        if key in data and data.get(key) is not None:
+            data[key] = html2text.html2text(data[key]).strip()
 
 
 class VK_APIUser(APIUser):
@@ -665,6 +698,7 @@ class VK_APIMessage(APIMessage):
         data_dict.pop('cid', None)
         data_dict.pop('online', None)
         data_dict.pop('uid', None)
+        _process_text_fields(data_dict)
         super(VK_APIMessage, self).__init__(data_dict)
 
     @property
@@ -675,6 +709,7 @@ class VK_APIMessage(APIMessage):
 class VK_APIContentObject(APIContentObject):
     def __init__(self, data_dict):
         data_dict['source'] = 'vk'
+        _process_text_fields(data_dict)
         super(VK_APIContentObject, self).__init__(data_dict)
 
 
@@ -726,6 +761,16 @@ class ContentResult(object):
     def comments(self, value):
         self._comments = value
 
+    def get_relations_with_type(self, relation_type, l=True, r=True):
+        if not isinstance(relation_type, (list,tuple,set)):
+            relation_type = [relation_type]
+        returned_rels = [(el[0],el[2]) for el in self.relations if (el[1] in relation_type)]
+        if not l:
+            returned_rels = [el[0] for el in returned_rels]
+        elif not r:
+            returned_rels = [el[1] for el in returned_rels]
+        return returned_rels
+
     def __radd__(self, other):
         if isinstance(other, self.__class__):
             self.comments += other.comments
@@ -742,20 +787,10 @@ class ContentResult(object):
         return self.__radd__(other)
 
 
+def _take_by(lst, by=1):
+    for i in xrange((len(lst) / by) + 1):
+        yield ",".join([str(el) for el in lst[i * by: (i + 1) * by]])
+
+
 if __name__ == '__main__':
-    api = VK_API()
-    user = api.get_user('266544674')
-    # for test video10130611_168906403
-    # entities, comments, likers = api.get_content_entities(user.sn_id)
-    # followers = api.get_followers(user.sn_id)
-    # user_subscript = api.get_subscriptions(user.sn_id)
-    # subscript_of_user = api.get_subscription_followers(user.sn_id)
-    groups = api.get_groups(user.sn_id)
-    # videos = api.get_videos(user.sn_id)
-    # photos = api.get_photos(user.sn_id)
-    # wall_posts = api.get_wall_posts(user.sn_id)
-    for group in groups:
-        so, com, ru = api.get_group_data(group.sn_id)
-        print so, com, ru
-
-
+    pass
