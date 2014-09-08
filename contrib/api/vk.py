@@ -682,7 +682,7 @@ class VK_APIUser(APIUser):
             if len(bdate) > 4:
                 data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
         if data_dict.get('last_seen'):
-            data_dict['last_seen'] = unix_time(data_dict['last_seen']['time'])
+            data_dict['last_visit'] = unix_time(data_dict['last_seen']['time'])
         if data_dict.get('counters'):
             counters = data_dict.get('counters')
             data_dict['followers_count'] = counters['followers']
