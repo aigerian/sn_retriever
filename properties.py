@@ -138,7 +138,7 @@ vk_logins = {1: '+79811064022',
 
 vk_pass = 'sederfes100500'
 
-vk_user_fields = 'connections, nickname, screen_name, sex, bdate, city, country, timezone, has_mobile, contacts, education, online, counters, relation, last_seen, status, universities'
+vk_user_fields = 'sex, bdate, city, country, photo_max_orig, domain, has_mobile, contacts, connections, site, education, universities, schools, can_see_all_posts, can_see_audio, can_write_private_message, status, last_seen, common_count, relation, relatives, counters, screen_name, maiden_name, timezone, occupation,activities, interests, music, movies, tv, books, games, about, quotes '
 vk_group_fields = 'city, country, place, description, wiki_page, members_count, counters, start_date, end_date, activity'
 #vk helper...
 vk_access_credentials = {'client_id': '3784486',

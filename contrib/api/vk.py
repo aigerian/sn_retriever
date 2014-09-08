@@ -16,7 +16,6 @@ from properties import certs_path, vk_access_credentials, vk_pass, vk_user_field
     vk_logins, vk_group_fields
 from contrib.api.entities import API, APIException, APIUser, APIMessage, APIContentObject, APISocialObject
 
-
 member_type_rel = ('member', 'request', 'invitation')
 
 
@@ -135,7 +134,6 @@ class VK_API(API):
         self.array_item_process = lambda x: x[1:]
         self.array_count_process = lambda x: x[0]
 
-
     def get(self, method_name, **kwargs):
         def change_token(e):
             self.log.info(
@@ -191,7 +189,6 @@ class VK_API(API):
             next_result = items_process(self.get(method_name, **kwargs))
             for el in next_result:
                 yield el
-
 
     def get_friends(self, user_id):
         command = 'friends.get'
@@ -259,7 +256,7 @@ class VK_API(API):
 
     def check_members(self, candidates, group_id):
         relations = []
-        for commentators_batch_name in _take_by(candidates, 200):
+        for commentators_batch_name in _take_by(candidates, 500):
             is_members_result = self.get('groups.isMember', user_ids=commentators_batch_name, group_id=group_id,
                                          extended=1)
             for el in is_members_result:
@@ -655,6 +652,7 @@ class VK_API(API):
         return contentResult
 
 
+
 import html2text
 
 
@@ -663,6 +661,17 @@ def _process_text_fields(data):
         if key in data and data.get(key) is not None:
             data[key] = html2text.html2text(data[key]).strip()
 
+def _delete_fields_with_prefix(data, prefixes, l=True,r=False):
+    to_replace = []
+    for k,v in data.iteritems():
+        if isinstance(k, (str,unicode)):
+            for prefix in prefixes:
+                if l and k.startswith(prefix):
+                    to_replace.append(k)
+                if r and k.endswith(prefix):
+                    to_replace.append(k)
+    for el in to_replace:
+        data.pop(el, None)
 
 class VK_APIUser(APIUser):
     def __init__(self, data_dict, created_at_format=None, ):
@@ -711,6 +720,14 @@ class VK_APIContentObject(APIContentObject):
         data_dict['source'] = 'vk'
         _process_text_fields(data_dict)
         super(VK_APIContentObject, self).__init__(data_dict)
+
+
+class VK_APISocialObject(APISocialObject):
+    def __init__(self, data_dict):
+        data_dict['sn_id'] = data_dict.get('id')
+        _delete_fields_with_prefix(data_dict,('is_','photo_'), l=True, r=False)
+        super(VK_APISocialObject, self).__init__(data_dict)
+
 
 
 class ContentResult(object):
@@ -793,4 +810,6 @@ def _take_by(lst, by=1):
 
 
 if __name__ == '__main__':
-    pass
+    d = {'is_admin':1, 'is_hui':1, 'tototo':1, 'foo':3, 'bar':3, 'baba':1}
+    _delete_fields_with_prefix(d, ('is_', 'ba'), True,True)
+    print d
