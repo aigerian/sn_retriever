@@ -60,10 +60,18 @@ class VK_API_Execute(VK_API):
         # связи пользователя
         content_result.add_relations([(el, 'following', user.sn_id) for el in user_data['followers']['items']])
         content_result.add_relations([(el, 'friend', user.sn_id) for el in user_data['friends']])
+        def fill_count(count_name):
+            counter = user_data.get(count_name)
+            if counter and len(counter):
+                if isinstance(counter, dict):
+                    user['%s_count'%count_name] = counter['count']
+                    return counter['items']
+                else:
+                    user['%s_count'%count_name] = counter[0]
+                    return counter[1:]
+            return []
         # его подписки (то что он читает)
-        if user_data['subscriptions']:
-            user['subscriptions_count'] = user_data['subscriptions']['count']
-            for el in user_data['subscriptions']['items']:
+        for el in fill_count('subscriptions'):
                 page = VK_APISocialObject(el)
                 content_result.add_content(page)
                 if el['is_admin']:
@@ -73,9 +81,7 @@ class VK_API_Execute(VK_API):
                 else:
                     content_result.add_relations((user_id, 'subscribe', page.sn_id))
         #его фотографии и комментарии к ним
-        if user_data['photos']:
-            user['photos_count'] = user_data['photos']['count']
-            content_result.add_content([VK_APIContentObject({'sn_id': '%s_photo_%s' % (el['id'], el['owner_id']),
+        content_result.add_content([VK_APIContentObject({'sn_id': '%s_photo_%s' % (el['id'], el['owner_id']),
                                                              'album': el['album_id'],
                                                              'user': {'sn_id': el['owner_id']},
                                                              'text': el['text'],
@@ -84,16 +90,13 @@ class VK_API_Execute(VK_API):
                                                              'likes_count': el['likes']['count'],
                                                              'photo_id': el['id'],
                                                              'type': 'photo'})
-                                        for el in user_data['photos']['items']])
-            if user_data['photos_comments']:
-                content_result.add_comments([VK_APIMessage({'sn_id': '%s_comment_%s' % (el['id'], el['pid'])},
+                                        for el in fill_count('photos')])
+        content_result.add_comments([VK_APIMessage({'sn_id': '%s_comment_%s' % (el['id'], el['pid'])},
                                                            comment_for=el['pid'],
                                                            comment_id=el['id'])
-                                             for el in user_data['photo_comments']['items']])
+                                             for el in fill_count('photo_comments')])
         #его видеозаписи
-        if user_data['videos']:
-            user['videos_count'] = user_data['videos']['count']
-            content_result.add_content([VK_APIContentObject({'sn_id': '%s_video_%s' % (el['id'], el['owner_id']),
+        content_result.add_content([VK_APIContentObject({'sn_id': '%s_video_%s' % (el['id'], el['owner_id']),
                                                              'user': {'sn_id': el['owner_id']},
                                                              'text': "%s %s" % (el['title'], el['description']),
                                                              'created_at': unix_time(el['date']),
@@ -102,11 +105,9 @@ class VK_API_Execute(VK_API):
                                                              'likes_count': el['likes']['count'],
                                                              'video_id': el['id'],
                                                              'type': 'video'})
-                                        for el in user_data['videos']['items']])
+                                        for el in fill_count('videos')])
         #его стена
-        if user_data['wall']:
-            user['wall_post_count'] = user_data['wall']['count']
-            for wall_post_data in user_data['wall']['items']:
+        for wall_post_data in fill_count('wall'):
                 wall_post = VK_APIContentObject(
                     {'sn_id': '%s_wall_post_%s' % (wall_post_data['id'], wall_post_data['owner_id']),
                      'repost_count': wall_post_data['reposts']['count'],
@@ -130,9 +131,7 @@ class VK_API_Execute(VK_API):
                     wall_post['repost_of'] = "%s_wall_post_%s" % (repost['id'], repost['owner_id'])
                 content_result.add_content(wall_post)
         #его записки
-        if user_data['notes']:
-            user['notes_count']=user_data['notes']['count']
-            for note_data in user_data['notes']['items']:
+        for note_data in fill_count('notes'):
                 note = VK_APIContentObject({'sn_id':'%s_note_%s'%(note_data['id'], note_data['owner_id']),
                                             'comments_count':note_data['comments'],
                                             'user':{'sn_id':note_data['owner_id']},

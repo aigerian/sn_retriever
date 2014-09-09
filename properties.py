@@ -129,11 +129,11 @@ def get_ttr_credentials(number):
 vk_key = 'mRNxuLGPrSCtuqLl9DkU'
 vk_app_name = 'vk_retr'
 
-vk_logins = {1: '+79811064022',
-             2: '+79060739957',
-             3: '+79138973664',
-             4: '+79060740391',
-             5: '+79516739528'
+vk_logins = {#1: '+79811064022',
+             # 2: '+79060739957',
+              3: '+79138973664',
+             # 4: '+79060740391',
+             # 5: '+79516739528'
 }
 
 vk_pass = 'sederfes100500'
@@ -142,13 +142,13 @@ vk_user_fields = 'sex, bdate, city, country, photo_max_orig, domain, has_mobile,
 vk_group_fields = 'city, country, place, description, wiki_page, members_count, counters, start_date, end_date, activity'
 #vk helper...
 vk_access_credentials = {'client_id': '3784486',
-                         'scope': 'friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
-                         #'scope': 262144,
+                         # 'scope': 'notify,friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
+                         'scope': 999999,
                          'redirect_uri': 'https://oauth.vk.com/blank.html',
                          'display': 'mobile',
                          'v': 5.24,
                          'response_type': 'token',
-                         'revoke':1}
+                         }
 #also...
 vk_edit_app_url = 'https://vk.com/editapp?id=3784486&section=options'
 
