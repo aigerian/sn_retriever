@@ -43,7 +43,7 @@ class TTR_Graph(nx.DiGraph):
                 for user_id in related_ids:
                     if self.persistent.is_not_loaded(user_id):
                         not_loaded_users.append(user_id)
-                loaded, not_loaded = self.api.get_users(ids=not_loaded_users)
+                loaded, not_loaded = self.api.get_users_info(ids=not_loaded_users)
                 for loaded_user in loaded:
                     self.persistent.save_user(loaded_user)
                 del loaded
@@ -54,7 +54,7 @@ class TTR_Graph(nx.DiGraph):
                     yield el
         else:
             if (datetime.now() - update_date).total_seconds() > properties.relation_cache_time:
-                updated_n = self.api.get_user(user_id=n)
+                updated_n = self.api.get_user_info(user_id=n)
                 if updated_n is None:
                     yield None
                 real_refs_count = self.persistent.get_relations_count(n, rel_type)
@@ -63,7 +63,7 @@ class TTR_Graph(nx.DiGraph):
                     new, remove, acc = self.tracker.get_relations_diff(updated_n, delta, rel_type)
                     for el in new:
                         if self.persistent.is_not_loaded(el):
-                            loaded_user = self.api.get_user(user_id=el)
+                            loaded_user = self.api.get_user_info(user_id=el)
                             if not loaded_user:
                                 self.persistent.remove_relation(n, rel_type, el)
                             else:
@@ -91,10 +91,10 @@ class TTR_Graph(nx.DiGraph):
     def __get_user_node(self, screen_name):
         if isinstance(screen_name, APIUser):
             return screen_name
-        result = self.persistent.get_user(screen_name=screen_name)
+        result = self.persistent.get_user_info(screen_name=screen_name)
         if not result:
             if self.api:
-                result = self.api.get_user(screen_name=screen_name)
+                result = self.api.get_user_info(screen_name=screen_name)
                 if not result:
                     raise nx.NetworkXNoPath("TTR have not this user [%s]" % screen_name)
                 self.persistent.save_user(result)

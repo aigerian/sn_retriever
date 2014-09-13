@@ -292,17 +292,21 @@ class Persistent(object):
         self.messages = self.database['messages']
         self.__create_index(self.messages, 'sn_id', ASCENDING, True)
         self.__create_index(self.messages, 'user', ASCENDING, False)
+        self.__create_index(self.messages, 'source', ASCENDING, False)
         self.__create_index(self.messages, 'text', 'text', False, language_override='lang')
 
         self.users = self.database['users']
         self.__create_index(self.users, 'sn_id', ASCENDING, True)
         self.__create_index(self.users, 'screen_name', ASCENDING, False)
+        self.__create_index(self.users, 'source', ASCENDING, False)
 
         self.social_objects = self.database['social_objects']
         self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
+        self.__create_index(self.social_objects, 'source', ASCENDING, False)
 
         self.content_objects = self.database['content_objects']
         self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
+        self.__create_index(self.social_objects, 'source', ASCENDING, False)
 
         self.not_loaded_users = self.database['not_loaded_users']
 
@@ -339,6 +343,23 @@ class Persistent(object):
         assert changes.get('sn_id')
         assert changes.get('datetime')
         self.changes.save(changes)
+
+
+    def get_observed_users_ids(self,update_iteration_time, source):
+        """
+        Возвращает пользователей за которыми следует последить
+        :param update_iteration_time: то количество секунд до которого не следим
+        :param source: ресурс для обозначения пользователей социальной сети
+        :return: генератор с бачами пользователей в виде {sn_id: user_object}
+        """
+        actual_date = datetime.datetime.now() - datetime.timedelta(seconds=update_iteration_time)
+        result = {}
+        for user_data in self.get_users_iter({'update_date': {'$lte': actual_date}, 'source':source}):
+            result[user_data.sn_id] = user_data
+            if len(result) == 1000:
+                yield result
+                result = {}
+        yield result
 
     def update_user_date(self, user_sn_id):
         self.users.update({'sn_id': user_sn_id}, {'$set': {'update_date': datetime.now()}})
@@ -459,7 +480,6 @@ class Persistent(object):
     def save_content_object(self, s_object):
         result = self._save_or_update_object(self.content_objects, s_object['sn_id'], s_object)
         return result
-
 
     def retrieve_relations_for_diff(self, from_id, relation_type):
         result = [int(el) for el in self.redis.get_relations_and_remove(from_id, relation_type)]

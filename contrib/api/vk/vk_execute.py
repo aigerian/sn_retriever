@@ -1,4 +1,5 @@
 # coding=utf-8
+from datetime import datetime
 from contrib.api.vk import VK_API, ContentResult, VK_APIUser, VK_APIMessage, VK_APIContentObject, VK_APISocialObject, \
     unix_time, get_mentioned
 import properties
@@ -7,6 +8,15 @@ __author__ = '4ikist'
 
 social_objects_relations_type = ['member', 'admin', 'subscriber']
 user_relations = ['friend', 'follower', 'like', 'comment', 'mentions']
+
+iterated_counters = {'subscriptions': 200,
+                     'followers': 1000,
+                     'photos': 200,
+                     'photo_comments': 100,
+                     'videos': 200,
+                     'wall': 100,
+                     'notes': 100,
+                     'groups': 1000}
 
 
 class ContentResultIntelligentRelations(ContentResult):
@@ -62,6 +72,7 @@ class VK_API_Execute(VK_API):
                 };
             """ % {'user_id': user_id, 'user_fields': properties.vk_user_fields}).strip().replace('\n', '')
         # user_data = self.get('execute', **{'code': execute_code})
+
         user_data = self.get('execute.userData', **{'user_id': user_id})
         user = VK_APIUser(user_data['user'])
         content_result = ContentResultIntelligentRelations(user.sn_id)
@@ -121,7 +132,7 @@ class VK_API_Execute(VK_API):
                                   'video_id': el['id'],
                                   'type': 'video'})
              for el in fill_count('videos')])
-        #его стена
+        # его стена
         for wall_post_data in fill_count('wall'):
             wall_post = VK_APIContentObject(
                 {'sn_id': '%s_wall_post_%s' % (wall_post_data['id'], wall_post_data['owner_id']),
@@ -151,7 +162,7 @@ class VK_API_Execute(VK_API):
                 repost = wall_post_data['copy_history'][0]
                 wall_post['repost_of'] = "%s_wall_post_%s" % (repost['id'], repost['owner_id'])
             content_result.add_content(wall_post)
-        #его записки
+        # его записки
         for note_data in fill_count('notes'):
             note = VK_APIContentObject({'sn_id': '%s_note_%s' % (note_data['id'], note_data['owner_id']),
                                         'comments_count': note_data['comments'],
@@ -161,12 +172,13 @@ class VK_API_Execute(VK_API):
             })
             content_result.add_content(note)
         #его групы
-        groups = []
         if user_data['groups']:
             user['groups_count'] = user_data['groups']['count']
             groups = [VK_APISocialObject(el) for el in user_data['groups']['items']]
             content_result.add_relations([(user.sn_id, 'member', el.sn_id) for el in groups])
             content_result.add_content(groups)
+        #укажем когда мы загрузили данные
+        user['data_load_at'] = datetime.now()
         return user, content_result
 
 

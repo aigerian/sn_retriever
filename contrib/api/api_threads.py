@@ -52,7 +52,7 @@ class ThreadHandler(object):
 
 if __name__ == '__main__':
     h = ThreadHandler()
-    identity = h.call(get_api().get_user, screen_name='@linoleum2k12')
+    identity = h.call(get_api().get_user_info, screen_name='@linoleum2k12')
     print h.is_ready(identity)
     print h.is_ready(identity)
     print h.is_ready(identity)

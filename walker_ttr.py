@@ -43,7 +43,7 @@ def persist_messages(user_data):
 
 def persist_all_user_data_and_retrieve_friends_ids(screen_name, relation_type):
     log.info('start loading user: %s'%screen_name)
-    user_data = ttr.get_user(screen_name=screen_name)
+    user_data = ttr.get_user_info(screen_name=screen_name)
     persist.save_user(user_data)
     persist_messages(user_data)
     return get_user_relations(user_data, relation_type)
@@ -51,7 +51,7 @@ def persist_all_user_data_and_retrieve_friends_ids(screen_name, relation_type):
 
 def persist_users_by_ids_and_retrieve_friends(ids, relation_type):
     result = []
-    loaded, _ = ttr.get_users(ids)
+    loaded, _ = ttr.get_users_info(ids)
     if len(_):
         log.error('we have not loaded ids:\n%s'%', '.join(_))
     for user_data in set(loaded):

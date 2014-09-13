@@ -178,7 +178,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
         if isinstance(user_params, APIUser):
             #check that user in db
             if not user_params.get('_id'):
-                saved_user = self.database.get_user(sn_id=user_params.get('sn_id'))
+                saved_user = self.database.get_user_info(sn_id=user_params.get('sn_id'))
                 if not saved_user:
                     self.database.save_user(user_params)
                 return saved_user
@@ -186,11 +186,11 @@ class TTR_Characterisitcs(BaseCharacteristics):
                 return user_params
 
         user_params['use_as_cache'] = True
-        user = self.database.get_user(**user_params)
+        user = self.database.get_user_info(**user_params)
         if not user:
             if self.api:
                 user_params.pop('use_as_cache')
-                user = self.api.get_user(**user_params)
+                user = self.api.get_user_info(**user_params)
                 self.database.save_user(user)
         return user
 
@@ -220,15 +220,15 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
     def __get_actual_relations(self, user, relations_type='friends'):
         user_params = get_params_for_db(user)
-        saved_user = self.database.get_user(**user_params)
+        saved_user = self.database.get_user_info(**user_params)
         if self.api:
             user_api_params = get_params_for_api(user)
-            api_user = self.api.get_user(**user_api_params)
+            api_user = self.api.get_user_info(**user_api_params)
             real_count = api_user.get('%s_count' % relations_type)
             saved_count = self.database.get_relations_count(api_user.get('sn_id'), relations_type)
             delta = real_count - saved_count
             new, removed, _ = self.tracker.get_relations_diff(saved_user, delta, relations_type=relations_type)
-            new_users, _ = self.api.get_users(new)
+            new_users, _ = self.api.get_users_info(new)
             for el in new_users:
                 self.database.save_user(el)
         related_users = self.database.get_related_users(from_id=saved_user.get('sn_id'), relation_type=relations_type)
@@ -262,13 +262,13 @@ class TTR_Characterisitcs(BaseCharacteristics):
         result = []
         not_in_db_users = []
         for user_name in user_names_list:
-            user = self.database.get_user(screen_name=user_name)
+            user = self.database.get_user_info(screen_name=user_name)
             if not user:
                 not_in_db_users.append(user_name)
             else:
                 result.append(user)
         if self.api and len(not_in_db_users):
-            retrieved,_ = self.api.get_users(screen_names=not_in_db_users)
+            retrieved,_ = self.api.get_users_info(screen_names=not_in_db_users)
             for user in retrieved:
                 self.database.save_user(user)
                 result.append(user)

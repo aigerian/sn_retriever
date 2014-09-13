@@ -23,17 +23,6 @@ persist = Persistent()
 
 log = logger.getChild('walker_ttr')
 
-batch_count = 1000
-
-def get_observed_users_ids(update_iteration_time):
-    actual_date = datetime.datetime.now() - datetime.timedelta(seconds=update_iteration_time)
-    result = {}
-    for user_data in persist.get_users_iter({'update_date': {'$lte': actual_date}, 'source':'ttr'}):
-        result[user_data.sn_id] = user_data
-        if len(result) == batch_count:
-            yield result
-            result = {}
-    yield result
 
 def _is_changed_counts(do, dn):
     for k, v in do.iteritems():
@@ -61,8 +50,8 @@ if __name__ == '__main__':
         from properties import update_iteration_time
 
     while 1:
-        for user_data_batch in get_observed_users_ids(update_iteration_time):
-            users_datas,_ = ttr.get_users(user_data_batch.keys())
+        for user_data_batch in persist.get_observed_users_ids(update_iteration_time,'ttr'):
+            users_datas,_ = ttr.get_users_info(user_data_batch.keys())
             for new_user_data in users_datas:
                 old_user_data = user_data_batch.pop(new_user_data.sn_id)
                 changes = get_user_changes(new_user_data, old_user_data)

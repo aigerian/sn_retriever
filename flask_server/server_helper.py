@@ -47,7 +47,7 @@ class ServerHelper(object):
                     'latane_urls': latane_function_with_urls_result,
                     'latane_ht_urls': latane_function_with_ht_and_urls_result}
 
-        user = self.persistent.get_user(screen_name=screen_name)
+        user = self.persistent.get_user_info(screen_name=screen_name)
         if user:
             extended_info = self.persistent.get_extended_user_info(user.get('_id'))
             if extended_info:
@@ -66,7 +66,7 @@ class ServerHelper(object):
             return not_ended
         result = self.th.get_result(wait_identity)
         wait_info = self.waited.get(wait_identity)
-        user = self.persistent.get_user(screen_name=wait_info.get('screen_name'))
+        user = self.persistent.get_user_info(screen_name=wait_info.get('screen_name'))
         self.persistent.save_extended_user_info(user_id=user.get('_id'), extended_info=result)
         del self.waited[wait_identity]
         return {'user': user, 'extended_info': result}
