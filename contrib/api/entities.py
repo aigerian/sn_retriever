@@ -72,7 +72,7 @@ class APIException(Exception):
 
 
 class APIContentObject(dict):
-    def __init__(self, data_dict, created_at_format=None, from_db=False):
+    def __init__(self, data_dict):
         super(APIContentObject, self).__init__(data_dict)
 
     def __hash__(self):
@@ -94,8 +94,8 @@ class APISocialObject(APIContentObject):
 
 
 class APIUser(APIContentObject):
-    def __init__(self, data_dict, created_at_format=None, from_db=False):
-        super(APIUser, self).__init__(data_dict, created_at_format, from_db)
+    def __init__(self, data_dict):
+        super(APIUser, self).__init__(data_dict)
 
     @property
     def name(self):

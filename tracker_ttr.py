@@ -67,7 +67,7 @@ if __name__ == '__main__':
                 old_user_data = user_data_batch.pop(new_user_data.sn_id)
                 changes = get_user_changes(new_user_data, old_user_data)
                 if len(changes):
-                    # log.info('found changes (%s) for user: %s' %(len(changes), new_user_data.screen_name))
+                    log.info('found changes (%s) for user: %s' %(len(changes), new_user_data.screen_name))
                     changes['sn_id'] = new_user_data.sn_id
                     changes['datetime'] = datetime.datetime.now()
                     persist.save_user_changes(changes)

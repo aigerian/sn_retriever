@@ -673,7 +673,7 @@ def _delete_fields_with_prefix(data, prefixes, l=True,r=False):
         data.pop(el, None)
 
 class VK_APIUser(APIUser):
-    def __init__(self, data_dict, created_at_format=None, ):
+    def __init__(self, data_dict):
         data_dict['source'] = 'vk'
         data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id',None)
         if data_dict.get('bdate'):
@@ -689,7 +689,7 @@ class VK_APIUser(APIUser):
         if 'screen_name' not in data_dict:
             data_dict['screen_name'] = data_dict.pop('domain', None) or data_dict.get('sn_id')
         data_dict['name'] = data_dict['first_name'] + ' ' + data_dict['last_name']
-        super(VK_APIUser, self).__init__(data_dict, created_at_format)
+        super(VK_APIUser, self).__init__(data_dict)
 
 
 class VK_APIMessage(APIMessage):

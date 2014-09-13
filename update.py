@@ -5,12 +5,21 @@ __author__ = '4ikist'
 
 __doc__ = """Обновляет пользователей уже сохраненных и прописывыает всем у кого не задан source равным ttr """
 
-if __name__ == '__main__':
-    persist = Persistent()
+persist = Persistent()
+def update_data_for_source():
     counter = 0
-    for user in persist.get_users_iter():
-        if 'source' not in user:
-            counter += 1
-            user['source'] = 'ttr'
+    for user in persist.get_users_iter({'source':{'$exists':False}}):
+        counter += 1
+        user['source'] = 'ttr'
         persist.save_user(user)
     print "updated %s users" % counter
+    counter = 0
+    for message in persist.get_messages_iter({'source':{'$exists':False}}):
+        counter+=1
+        message['source'] = 'ttr'
+        persist.save_message(message)
+    print 'updated %s messages' %counter
+
+
+if __name__ == '__main__':
+    update_data_for_source()

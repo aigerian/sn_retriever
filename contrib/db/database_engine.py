@@ -356,7 +356,7 @@ class Persistent(object):
             parameter = {}
         users = self.users.find(parameter)
         for el in users:
-            yield APIUser(el, from_db=True)
+            yield APIUser(el)
 
     def get_user(self, _id=None, sn_id=None, screen_name=None, use_as_cache=False):
         """
@@ -378,7 +378,7 @@ class Persistent(object):
         if use_as_cache and user and (datetime.now() - user.get('update_date')).seconds > user_cache_time:
             return None
         if user:
-            return APIUser(user, from_db=True)
+            return APIUser(user)
 
     def is_not_loaded(self, user_sn_id):
         result = self.not_loaded_users.find_one({'_id': user_sn_id})
@@ -413,6 +413,10 @@ class Persistent(object):
         result = self.messages.find(parameter).sort('created_at', -1)
         result = [APIMessage(el) for el in result]
         return result
+
+    def get_messages_iter(self, parameter):
+        for el in self.messages.find(parameter):
+            yield APIMessage(el)
 
     def get_message_last(self, user):
         result = list(self.messages.find({'user.$id': user.get('_id')}).sort('created_at', -1).limit(1))

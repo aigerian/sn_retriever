@@ -307,17 +307,16 @@ class __TTR_API(object):
 
 
 class TTR_APIUser(APIUser):
-    def __init__(self, data_dict, created_at_format=None, from_db=False):
+    def __init__(self, data_dict, created_at_format=None,):
         data = dict(data_dict)
-        if not from_db:
-            data['sn_id'] = data.pop('id')
-            data['created_at'] = datetime.strptime(data['created_at'],
-                                                   created_at_format if created_at_format else '%a %b %d %H:%M:%S +0000 %Y')
-        super(TTR_APIUser, self).__init__(data, created_at_format, from_db)
+        data['source'] = 'ttr'
+        data['sn_id'] = data.pop('id')
+        data['created_at'] = datetime.strptime(data['created_at'], '%a %b %d %H:%M:%S +0000 %Y')
+        super(TTR_APIUser, self).__init__(data)
 
 
 class TTR_APIMessage(APIMessage):
-    def __init__(self, data_dict, created_at_format=None):
+    def __init__(self, data_dict):
         data = dict(data_dict)
         data['source'] = 'ttr'
         retweet = data.get('retweeted_status')

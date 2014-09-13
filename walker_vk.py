@@ -31,6 +31,7 @@ def persist_content_result(content_result, user_id):
         if new_user_id != user_id:
             if not persist.is_loaded(new_user_id):
                 not_loaded_users.append(new_user_id)
+                output_users.append(new_user_id)
 
     for from_id, rel_type, to_id in content_result.relations:
         if rel_type not in social_objects_relations_type: #если связь не с группой
@@ -73,7 +74,7 @@ if __name__ == '__main__':
         for user_id in related_users:
             log.info("Retrieving info for user %s" % user_id)
             new_related_users.extend(persist_all_user_data_and_retrieve_related(user_id))
-        related_users = new_related_users
+        related_users = list(set(new_related_users))
 
 
 
