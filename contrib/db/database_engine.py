@@ -352,6 +352,8 @@ class Persistent(object):
     def get_users_iter(self, parameter=None):
         if parameter and isinstance(parameter, dict) and parameter.get('screen_name'):
             parameter['screen_name'] = parameter.get('screen_name').lower()
+        else:
+            parameter = {}
         users = self.users.find(parameter)
         for el in users:
             yield APIUser(el, from_db=True)
@@ -384,6 +386,11 @@ class Persistent(object):
             return True
         result = self.users.find_one({'sn_id': user_sn_id})
         if not result:
+            return True
+        return False
+
+    def is_loaded(self, user_sn_id):
+        if self.users.find_one({'sn_id': user_sn_id}):
             return True
         return False
 
@@ -518,6 +525,8 @@ class Persistent(object):
                 self.save_content_object(object)
             elif isinstance(object, APISocialObject):
                 self.save_social_object(object)
+            elif isinstance(object, APIUser):
+                self.save_user(object)
             else:
                 log.warn('object have not supported entity\n%s' % object)
 
@@ -531,9 +540,10 @@ class Persistent(object):
         log.debug('saving object: [%s]\n%s' % (object_data.get('screen_name') or sn_id, object_data))
         founded_user = sn_object.find_one({'sn_id': sn_id})
         if founded_user:
-            founded_user = dict(founded_user)
-            founded_user.update(object_data)
-            sn_object.save(founded_user)
+            # founded_user = dict(founded_user)
+            # founded_user.update(object_data)
+            object_data['_id'] = founded_user['_id']
+            sn_object.save(object_data)
             result = founded_user.get('_id')
         else:
             result = sn_object.save(object_data)

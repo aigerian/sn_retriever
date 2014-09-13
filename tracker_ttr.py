@@ -28,7 +28,7 @@ batch_count = 1000
 def get_observed_users_ids(update_iteration_time):
     actual_date = datetime.datetime.now() - datetime.timedelta(seconds=update_iteration_time)
     result = {}
-    for user_data in persist.get_users_iter({'update_date': {'$lte': actual_date}}):
+    for user_data in persist.get_users_iter({'update_date': {'$lte': actual_date}, 'source':'ttr'}):
         result[user_data.sn_id] = user_data
         if len(result) == batch_count:
             yield result

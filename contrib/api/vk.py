@@ -686,6 +686,8 @@ class VK_APIUser(APIUser):
             counters = data_dict.get('counters')
             data_dict['followers_count'] = counters['followers']
             data_dict['friends_count'] = counters['friends']
+        if 'screen_name' not in data_dict:
+            data_dict['screen_name'] = data_dict.pop('domain', None) or data_dict.get('sn_id')
         data_dict['name'] = data_dict['first_name'] + ' ' + data_dict['last_name']
         super(VK_APIUser, self).__init__(data_dict, created_at_format)
 
@@ -725,6 +727,7 @@ class VK_APIContentObject(APIContentObject):
 class VK_APISocialObject(APISocialObject):
     def __init__(self, data_dict):
         data_dict['sn_id'] = data_dict.pop('id')
+        data_dict['closed'] = data_dict.pop('is_closed', False)
         _delete_fields_with_prefix(data_dict,('is_','photo_'), l=True, r=False)
         super(VK_APISocialObject, self).__init__(data_dict)
 
