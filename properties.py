@@ -126,27 +126,30 @@ def get_ttr_credentials(number):
             'access_token_secret': ttr_access_tokens_secret[number]}
 
 #vk application credentials
-vk_key = 'mRNxuLGPrSCtuqLl9DkU'
+vk_key = 'YcU5rO3vWTAUO0trVTS3'
 vk_app_name = 'vk_retr'
 
 vk_logins = {#1: '+79811064022',
              # 2: '+79060739957',
               3: '+79138973664',
              # 4: '+79060740391',
-             # 5: '+79516739528'
+             # 5: '+79516739528',
+             # 6: '+79043362166',
+             # 7: '+79043377563'
 }
 
 vk_pass = 'sederfes100500'
 
-vk_user_fields = 'sex, bdate, city, country, photo_max_orig, domain, has_mobile, contacts, connections, site, education, universities, schools, can_see_all_posts, can_see_audio, can_write_private_message, status, last_seen, common_count, relation, relatives, counters, screen_name, maiden_name, timezone, occupation,activities, interests, music, movies, tv, books, games, about, quotes '
+vk_user_fields = 'sex, bdate, city, country, photo_max_orig, domain, has_mobile, contacts, connections, site, education, universities, schools, can_see_all_posts, can_see_audio, can_write_private_message, status, last_seen, common_count, relation, relatives, counters, screen_name, maiden_name, timezone, occupation,activities, interests, music, movies, tv, books, games, about, quotes'
 vk_group_fields = 'city, country, place, description, wiki_page, members_count, counters, start_date, end_date, activity'
 #vk helper...
-vk_access_credentials = {'client_id': '3784486',
+vk_api_version = 5.24
+vk_access_credentials = {'client_id': '4544084',
                          # 'scope': 'notify,friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
                          'scope': 999999,
                          'redirect_uri': 'https://oauth.vk.com/blank.html',
-                         'display': 'mobile',
-                         'v': 5.24,
+                         'display': 'wap',
+                         #'v': 5.24,
                          'response_type': 'token',
                          }
 #also...

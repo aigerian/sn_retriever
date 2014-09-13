@@ -5,7 +5,7 @@ from contrib.db.utils import unload_graph
 __author__ = '4ikist'
 
 def shortest_path_redis():
-    rgp = unload_graph('test')
+    rgp = unload_graph('test.html')
     prev_node = None
     for el in rgp.nodes_iter():
         if prev_node and 'linoleum' in el.get('name'):

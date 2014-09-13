@@ -1,5 +1,6 @@
 # coding=utf-8
 from itertools import chain
+import properties
 
 __author__ = '4ikist'
 
@@ -12,8 +13,6 @@ import urlparse
 from lxml import html
 import requests
 
-from properties import certs_path, vk_access_credentials, vk_pass, vk_user_fields, logger, sleep_time_short, \
-    vk_logins, vk_group_fields
 from contrib.api.entities import API, APIException, APIUser, APIMessage, APIContentObject, APISocialObject
 
 member_type_rel = ('member', 'request', 'invitation')
@@ -41,9 +40,9 @@ unix_time = lambda x: datetime.datetime.fromtimestamp(int(x))
 
 class AccessTokenHolder(object):
     def __init__(self):
-        self.log = logger.getChild('VK_API_token_holder')
+        self.log = properties.logger.getChild('VK_API_token_holder')
         self.tokens = {}
-        for el in vk_logins.itervalues():
+        for el in properties.vk_logins.itervalues():
             token = self.__auth(el)
             self.tokens[token['access_token']] = token
         self.current_login = None
@@ -67,7 +66,7 @@ class AccessTokenHolder(object):
             candidates[not_used_time] = token
         times = candidates.keys()
         times.sort()
-        delta = sleep_time_short() - times[-1]
+        delta = properties.sleep_time_short() - times[-1]
         if delta > 0:
             self.log.info('will sleep %s seconds' % abs(times[-1] - delta))
             sleep(abs(times[-1] - delta))
@@ -83,15 +82,15 @@ class AccessTokenHolder(object):
         # process first page
         self.log.info('vkontakte authenticate for %s' % vk_login)
         s = requests.Session()
-        s.verify = certs_path
-        result = s.get('https://oauth.vk.com/authorize', params=vk_access_credentials)
+        s.verify = properties.certs_path
+        result = s.get('https://oauth.vk.com/authorize', params=properties.vk_access_credentials)
         doc = html.document_fromstring(result.content)
         inputs = doc.xpath('//input')
         form_params = {}
         for el in inputs:
             form_params[el.attrib.get('name')] = el.value
         form_params['email'] = vk_login
-        form_params['pass'] = vk_pass
+        form_params['pass'] = properties.vk_pass
         form_url = doc.xpath('//form')[0].attrib.get('action')
         # process second page
         result = s.post(form_url, form_params)
@@ -127,7 +126,7 @@ class AccessTokenHolder(object):
 
 class VK_API(API):
     def __init__(self):
-        self.log = logger.getChild('VK_API')
+        self.log = properties.logger.getChild('VK_API')
         self.token_holder = AccessTokenHolder()
         self.access_token = self.token_holder.get_token()
         self.base_url = 'https://api.vk.com/method/'
@@ -143,7 +142,7 @@ class VK_API(API):
 
         change_token_succession = 0
         while 1:
-            params = dict({'access_token': self.access_token}, **kwargs)
+            params = dict({'access_token': self.access_token, 'v':properties.vk_api_version}, **kwargs)
             result = requests.get('%s%s' % (self.base_url, method_name), params=params)
             try:
                 result_object = json.loads(result.content)
@@ -157,7 +156,7 @@ class VK_API(API):
                     continue
                 elif result_object['error']['error_code'] == 7:
                     # if permission denied
-                    if change_token_succession >= len(vk_logins):
+                    if change_token_succession >= len(properties.vk_logins):
                         raise APIException(result_object)
                     else:
                         change_token_succession += 1
@@ -193,7 +192,7 @@ class VK_API(API):
     def get_friends(self, user_id):
         command = 'friends.get'
         kwargs = {'order': 'name',
-                  'fields': vk_user_fields,
+                  'fields': properties.vk_user_fields,
                   'user_id': user_id}
         result = self.get_all(command, batch_size=100, items_process=lambda x: x, count_process=lambda x: len(x),
                               **kwargs)
@@ -202,7 +201,7 @@ class VK_API(API):
     def get_followers(self, user_id):
         command = 'users.getFollowers'
         kwargs = {
-            'fields': vk_user_fields,
+            'fields': properties.vk_user_fields,
             'user_id': user_id}
         result = self.get_all(command, batch_size=100, **kwargs)
         return [VK_APIUser(el) for el in result]
@@ -238,7 +237,7 @@ class VK_API(API):
                                     items_process=self.array_item_process,
                                     **{'uid': user_id,
                                        'extended': 1,
-                                       'fields': vk_group_fields})
+                                       'fields': properties.vk_group_fields})
         for group in group_result:
             try:
                 members = get_members(group['gid'])
@@ -408,7 +407,7 @@ class VK_API(API):
         :return: vk_fields of user
         """
         command = 'users.get'
-        kwargs = {'user_ids': user_id, 'fields': vk_user_fields}
+        kwargs = {'user_ids': user_id, 'fields': properties.vk_user_fields}
         result = self.get(command, **kwargs)
         user = VK_APIUser(result[0])
         return user
@@ -417,7 +416,7 @@ class VK_API(API):
         command = 'getProfiles'
         users = []
         for i in xrange((len(uids) / 1000) + 1):
-            kwargs = {'uids': ','.join([str(el) for el in uids[i * 1000:(i + 1) * 1000]]), 'fields': vk_user_fields}
+            kwargs = {'uids': ','.join([str(el) for el in uids[i * 1000:(i + 1) * 1000]]), 'fields': properties.vk_user_fields}
             result = self.get(command, **kwargs)
             for el in result:
                 users.append(VK_APIUser(el))
@@ -676,7 +675,7 @@ def _delete_fields_with_prefix(data, prefixes, l=True,r=False):
 class VK_APIUser(APIUser):
     def __init__(self, data_dict, created_at_format=None, ):
         data_dict['source'] = 'vk'
-        data_dict['sn_id'] = data_dict.pop('uid')
+        data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id',None)
         if data_dict.get('bdate'):
             bdate = data_dict.get('bdate')
             if len(bdate) > 4:
@@ -698,7 +697,8 @@ class VK_APIMessage(APIMessage):
             data_dict['user'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
         if not 'sn_id' in data_dict:
             data_dict['sn_id'] = data_dict.pop('cid', None) or data_dict.pop('id', None)
-        data_dict['created_at'] = datetime.datetime.fromtimestamp(int(data_dict.pop('date')))
+        if 'created_at' not in data_dict:
+            data_dict['created_at'] = datetime.datetime.fromtimestamp(int(data_dict.pop('date')))
         if comment_for:
             data_dict['comment_for'] = comment_for
             data_dict['comment_id'] = comment_id or data_dict['comment_id']
@@ -724,7 +724,7 @@ class VK_APIContentObject(APIContentObject):
 
 class VK_APISocialObject(APISocialObject):
     def __init__(self, data_dict):
-        data_dict['sn_id'] = data_dict.get('id')
+        data_dict['sn_id'] = data_dict.pop('id')
         _delete_fields_with_prefix(data_dict,('is_','photo_'), l=True, r=False)
         super(VK_APISocialObject, self).__init__(data_dict)
 
@@ -739,17 +739,23 @@ class ContentResult(object):
     def __add_object(self, object_type, object_acc, object):
         if isinstance(object, list):
             object_acc.extend(object)
+            return len(object)
         elif isinstance(object, object_type):
             object_acc.append(object)
+            return 1
 
     def add_relations(self, relation_objects):
-        self.__add_object(tuple, self.relations, relation_objects)
+        """
+        :param relation_objects:
+        :return: count of added objects
+        """
+        return self.__add_object(tuple, self.relations, relation_objects)
 
     def add_comments(self, comments):
-        self.__add_object(APIMessage, self.comments, comments)
+        return self.__add_object(APIMessage, self.comments, comments)
 
     def add_content(self, content_objects):
-        self.__add_object(APIContentObject, self.content, content_objects)
+        return self.__add_object(APIContentObject, self.content, content_objects)
 
     def get_content_to_persist(self):
         return chain(self.comments, self.content)
