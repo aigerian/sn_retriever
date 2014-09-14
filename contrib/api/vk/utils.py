@@ -1,11 +1,10 @@
 # coding=utf-8
 import datetime
-from contrib.api.vk.vk import ContentResult, VK_APIContentObject, VK_APIMessage, VK_APISocialObject, rel_types_groups
+from contrib.api.vk.vk_entities import ContentResult, VK_APIContentObject, VK_APIMessage, VK_APISocialObject, rel_types_groups, \
+    unix_time
 
 
 __author__ = '4ikist'
-
-unix_time = lambda x: datetime.datetime.fromtimestamp(int(x))
 
 
 def persist_content_result(content_result, user_id, persist, vk):
@@ -32,7 +31,6 @@ def persist_content_result(content_result, user_id, persist, vk):
 
     users = vk.get_users_info(not_loaded_users)
     persist.save_object_batch(users)
-
     persist.save_object_batch(content_result.get_content_to_persist())
     return output_users
 

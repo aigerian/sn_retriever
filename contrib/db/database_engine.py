@@ -545,12 +545,12 @@ class Persistent(object):
         for object in object_batch:
             if isinstance(object, APIMessage):
                 self.save_message(object)
-            elif isinstance(object, APIContentObject):
-                self.save_content_object(object)
-            elif isinstance(object, APISocialObject):
-                self.save_social_object(object)
             elif isinstance(object, APIUser):
                 self.save_user(object)
+            elif isinstance(object, APISocialObject):
+                self.save_social_object(object)
+            elif isinstance(object, APIContentObject):
+                self.save_content_object(object)
             else:
                 log.warn('object have not supported entity\n%s' % object)
 
@@ -566,8 +566,8 @@ class Persistent(object):
         if founded_user:
             # founded_user = dict(founded_user)
             # founded_user.update(object_data)
-            object_data['_id'] = founded_user['_id']
-            sn_object.save(object_data)
+            founded_user.update(object_data)
+            sn_object.save(founded_user)
             result = founded_user.get('_id')
         else:
             result = sn_object.save(object_data)

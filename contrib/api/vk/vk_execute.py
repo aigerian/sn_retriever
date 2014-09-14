@@ -1,9 +1,11 @@
 # coding=utf-8
 from datetime import datetime
-from contrib.api.vk.vk import VK_API, ContentResult, VK_APIUser, VK_APIMessage, VK_APIContentObject, VK_APISocialObject, get_mentioned
+
 from contrib.api.vk.utils import photo_retrieve, photo_comments_retrieve, video_retrieve, wall_retrieve, note_retrieve, \
     group_retrieve, subscriptions_retrieve
-import properties
+from contrib.api.vk.vk import VK_API
+from contrib.api.vk.vk_entities import ContentResult, get_mentioned, VK_APIUser
+
 
 __author__ = '4ikist'
 
@@ -78,19 +80,19 @@ class VK_API_Execute(VK_API):
             return []
 
         # его подписки (то что он читает)
-        content_result+=subscriptions_retrieve(fill_count('subscriptions'),user)
+        subscription_result = subscriptions_retrieve(fill_count('subscriptions'), user)
         # его фотографии и комментарии к ним
-        content_result += photo_retrieve(fill_count('photos'))
-        content_result += photo_comments_retrieve(fill_count('photo_comments'))
+        photo_result = photo_retrieve(fill_count('photos'))
+        photo_comment_result = photo_comments_retrieve(fill_count('photo_comments'))
         # его видеозаписи
-        content_result += video_retrieve(fill_count('videos'))
+        video_result = video_retrieve(fill_count('videos'))
         # его стена
-        content_result += wall_retrieve(fill_count('wall'))
+        wall_result = wall_retrieve(fill_count('wall'))
         # его записки
-        content_result += note_retrieve(fill_count('notes'))
+        note_result = note_retrieve(fill_count('notes'))
         # его групы
         group_content_result = group_retrieve(fill_count('groups'), user)
-        content_result+=group_content_result
+        content_result += group_content_result + subscription_result + photo_comment_result + photo_result + video_result + wall_result + note_result
 
         # укажем когда мы загрузили данные
         user['data_load_at'] = datetime.now()
@@ -99,6 +101,9 @@ class VK_API_Execute(VK_API):
 
 
 if __name__ == '__main__':
+    # cr = ContentResult()
+    # cri = ContentResultIntelligentRelations(1)
+    # print isinstance(cri,cr.__class__)
     vk = VK_API_Execute()
     user, content_result = vk.get_user_data('from_to_where')
     print user

@@ -2,7 +2,8 @@ from datetime import datetime
 import sys
 from contrib.api.vk.utils import persist_content_result
 
-from contrib.api.vk.vk_execute import VK_API_Execute, iterated_counters
+from contrib.api.vk.vk_execute import VK_API_Execute
+from contrib.api.vk.vk_entities import iterated_counters
 from contrib.db.database_engine import Persistent
 from properties import logger
 
