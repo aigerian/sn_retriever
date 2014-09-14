@@ -1,5 +1,8 @@
 # coding=utf-8
+from collections import defaultdict
+from functools import partial
 from itertools import chain
+from contrib.api.vk.utils import unix_time
 import properties
 
 __author__ = '4ikist'
@@ -15,7 +18,17 @@ import requests
 
 from contrib.api.entities import API, APIException, APIUser, APIMessage, APIContentObject, APISocialObject
 
-member_type_rel = ('member', 'request', 'invitation')
+rel_types_groups = ['member', 'admin', 'subscriber', 'request', 'invitation']
+rel_types_users = ['friend', 'follower', 'like', 'comment', 'mentions']
+
+iterated_counters = {'subscriptions': 200,
+                     'followers': 1000,
+                     'photos': 200,
+                     'photo_comments': 100,
+                     'videos': 200,
+                     'wall': 100,
+                     'notes': 100,
+                     'groups': 1000}
 
 
 def get_mentioned(text):
@@ -35,7 +48,6 @@ comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
                   'note': {'cmd': 'notes', 'id': 'note'}}
 
 error_codes = {180: 'note not found'}
-unix_time = lambda x: datetime.datetime.fromtimestamp(int(x))
 
 
 class AccessTokenHolder(object):
@@ -142,7 +154,7 @@ class VK_API(API):
 
         change_token_succession = 0
         while 1:
-            params = dict({'access_token': self.access_token, 'v':properties.vk_api_version}, **kwargs)
+            params = dict({'access_token': self.access_token, 'v': properties.vk_api_version}, **kwargs)
             result = requests.get('%s%s' % (self.base_url, method_name), params=params)
             try:
                 result_object = json.loads(result.content)
@@ -259,7 +271,7 @@ class VK_API(API):
             is_members_result = self.get('groups.isMember', user_ids=commentators_batch_name, group_id=group_id,
                                          extended=1)
             for el in is_members_result:
-                relation_type_ = [k for k, v in el.iteritems() if v == 1 and k in member_type_rel]
+                relation_type_ = [k for k, v in el.iteritems() if v == 1 and k in rel_types_groups]
                 if len(relation_type_):
                     relations.append((el['user_id'], relation_type_[0], group_id))
         return relations
@@ -325,15 +337,20 @@ class VK_API(API):
                                                            'user': {'sn_id': topic_user_id}}))
         # load group photos
         photos_content_result = self.get_photos(-group_id)
-        contentResult.add_relations(self.__get_members_from_result(photos_content_result.relations, contentResult.get_relations_with_type(member_type_rel,r=False), group_id))
+        # ддобавляем связи пользователей с группой которые добавили фотографию/видео к группе
+        contentResult.add_relations(self.__get_members_from_result(photos_content_result.relations,
+                                                                   contentResult.get_relations_with_type(
+                                                                       rel_types_groups, r=False), group_id))
         video_content_result = self.get_videos(-group_id)
-        contentResult.add_relations(self.__get_members_from_result(video_content_result.relations, contentResult.get_relations_with_type(member_type_rel,r=False), group_id))
-        contentResult+=photos_content_result+video_content_result
+        contentResult.add_relations(self.__get_members_from_result(video_content_result.relations,
+                                                                   contentResult.get_relations_with_type(
+                                                                       rel_types_groups, r=False), group_id))
+        contentResult += photos_content_result + video_content_result
 
         return contentResult
 
     def __get_members_from_result(self, result_relations, saved_members, group_id):
-        members_candidates = set([el[0 if int(el[2])<0 else 2] for el in result_relations])
+        members_candidates = set([el[0 if int(el[2]) < 0 else 2] for el in result_relations])
         members_candidates.difference_update(saved_members)
         return self.check_members(list(members_candidates), group_id)
 
@@ -416,7 +433,8 @@ class VK_API(API):
         command = 'getProfiles'
         users = []
         for i in xrange((len(uids) / 1000) + 1):
-            kwargs = {'uids': ','.join([str(el) for el in uids[i * 1000:(i + 1) * 1000]]), 'fields': properties.vk_user_fields}
+            kwargs = {'uids': ','.join([str(el) for el in uids[i * 1000:(i + 1) * 1000]]),
+                      'fields': properties.vk_user_fields}
             result = self.get(command, **kwargs)
             for el in result:
                 users.append(VK_APIUser(el))
@@ -651,7 +669,6 @@ class VK_API(API):
         return contentResult
 
 
-
 import html2text
 
 
@@ -660,10 +677,11 @@ def _process_text_fields(data):
         if key in data and data.get(key) is not None:
             data[key] = html2text.html2text(data[key]).strip()
 
-def _delete_fields_with_prefix(data, prefixes, l=True,r=False):
+
+def _delete_fields_with_prefix(data, prefixes, l=True, r=False):
     to_replace = []
-    for k,v in data.iteritems():
-        if isinstance(k, (str,unicode)):
+    for k, v in data.iteritems():
+        if isinstance(k, (str, unicode)):
             for prefix in prefixes:
                 if l and k.startswith(prefix):
                     to_replace.append(k)
@@ -672,10 +690,11 @@ def _delete_fields_with_prefix(data, prefixes, l=True,r=False):
     for el in to_replace:
         data.pop(el, None)
 
+
 class VK_APIUser(APIUser):
     def __init__(self, data_dict):
         data_dict['source'] = 'vk'
-        data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id',None)
+        data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id', None)
         if data_dict.get('bdate'):
             bdate = data_dict.get('bdate')
             if len(bdate) > 4:
@@ -728,15 +747,15 @@ class VK_APISocialObject(APISocialObject):
     def __init__(self, data_dict):
         data_dict['sn_id'] = data_dict.pop('id')
         data_dict['closed'] = data_dict.pop('is_closed', False)
-        _delete_fields_with_prefix(data_dict,('is_','photo_'), l=True, r=False)
+        _delete_fields_with_prefix(data_dict, ('is_', 'photo_'), l=True, r=False)
         super(VK_APISocialObject, self).__init__(data_dict)
-
 
 
 class ContentResult(object):
     def __init__(self):
         self._content = []
-        self._relations = []
+        # {from:{type:[to1,to2,to3]}}
+        self._relations = defaultdict(partial(defaultdict, list))
         self._comments = []
 
     def __add_object(self, object_type, object_acc, object):
@@ -747,12 +766,21 @@ class ContentResult(object):
             object_acc.append(object)
             return 1
 
+    def __add_relation(self, relation):
+        if relation[1] in rel_types_groups:
+            if relation[2] not in self._relations[relation[0]][relation[1]]:
+                self._relations[relation[0]][relation[1]].append(relation[2])
+
     def add_relations(self, relation_objects):
         """
         :param relation_objects:
         :return: count of added objects
         """
-        return self.__add_object(tuple, self.relations, relation_objects)
+        if isinstance(relation_objects, list):
+            for el in relation_objects:
+                self.__add_relation(el)
+        else:
+            self.__add_relation(relation_objects)
 
     def add_comments(self, comments):
         return self.__add_object(APIMessage, self.comments, comments)
@@ -769,39 +797,37 @@ class ContentResult(object):
 
     @property
     def relations(self):
-        return self._relations
+        result_acc = []
+        for from_, types_and_tos in self._relations.iteritems():
+            for type, to in types_and_tos.iteritems():
+                result_acc.append((from_, type, to))
+        return result_acc
 
     @property
     def comments(self):
         return self._comments
 
-    @relations.setter
-    def relations(self, value):
-        self._relations = value
-
-    @content.setter
-    def content(self, value):
-        self._content = value
-
-    @comments.setter
-    def comments(self, value):
-        self._comments = value
-
-    def get_relations_with_type(self, relation_type, l=True, r=True):
-        if not isinstance(relation_type, (list,tuple,set)):
+    def get_relations_with_type(self, relation_type, l=False, r=False):
+        if not isinstance(relation_type, (list, tuple, set)):
             relation_type = [relation_type]
-        returned_rels = [(el[0],el[2]) for el in self.relations if (el[1] in relation_type)]
+        result_acc = []
+        for from_, types_and_tos in self._relations.iteritems():
+            for type, to in types_and_tos.iteritems():
+                if type in relation_type:
+                    result_acc.append((from_, to))
         if not l:
-            returned_rels = [el[0] for el in returned_rels]
+            returned_rels = [el[0] for el in result_acc]
         elif not r:
-            returned_rels = [el[1] for el in returned_rels]
+            returned_rels = [el[1] for el in result_acc]
+        else:
+            returned_rels = result_acc
         return returned_rels
 
     def __radd__(self, other):
         if isinstance(other, self.__class__):
-            self.comments += other.comments
-            self.content += other.content
-            self.relations += other.relations
+            self.add_content(other.content)
+            self.add_comments(other.comments)
+            self.add_relations(other.relations)
             return self
         else:
             raise ValueError("+ operator with not ContentResult object")
@@ -819,6 +845,6 @@ def _take_by(lst, by=1):
 
 
 if __name__ == '__main__':
-    d = {'is_admin':1, 'is_hui':1, 'tototo':1, 'foo':3, 'bar':3, 'baba':1}
-    _delete_fields_with_prefix(d, ('is_', 'ba'), True,True)
+    d = {'is_admin': 1, 'is_hui': 1, 'tototo': 1, 'foo': 3, 'bar': 3, 'baba': 1}
+    _delete_fields_with_prefix(d, ('is_', 'ba'), True, True)
     print d

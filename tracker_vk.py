@@ -19,7 +19,9 @@ def get_changes(old_user, new_user):
         old_value = old_user.get(k)
         if '_count' in k:
             delta = v - old_value
-            if iterated_counters.get(k[:len('_count')]) > delta:
+            if delta < 0:
+                pass
+            if  delta > iterated_counters.get(k[:len('_count')]):
                 pass
                 # TODO process this!
 
