@@ -34,6 +34,10 @@ def persist_content_result(content_result, user_id, persist, vk):
     persist.save_object_batch(content_result.get_content_to_persist())
     return output_users
 
+def _get_from_dict_part_of_key(dict, part_of_key):
+    for k,v in dict.iteritems():
+        if part_of_key in k:
+            return v
 
 def photo_retrieve(photo_elements):
     content_result = ContentResult()
@@ -43,10 +47,11 @@ def photo_retrieve(photo_elements):
                                              'user': {'sn_id': el['owner_id']},
                                              'text': el['text'],
                                              'created_at': unix_time(el['date']),
-                                             'url': el['sizes'][-1]['src'],
+                                             'url': el['sizes'][-1]['src'] if el.get('sizes') else _get_from_dict_part_of_key(el,'photo_') ,
                                              'likes_count': el['likes']['count'],
                                              'photo_id': el['id'],
-                                             'type': 'photo'})
+                                             'type': 'photo',
+                                             'tags':el['tags']['count']})
         content_result.add_content(photo_content)
     return content_result
 

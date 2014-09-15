@@ -27,7 +27,7 @@ class ContentResultIntelligentRelations(ContentResult):
             if added_comment.get('text'):
                 self.add_relations([(added_comment['user']['sn_id'], 'mentions', el)
                                     for el in get_mentioned(added_comment['text'])])
-                self.add_relations((added_comment['user']['sn_id'], 'comment', self.user_id))
+            self.add_relations((added_comment['user']['sn_id'], 'comment', self.user_id))
 
     def add_content(self, content_objects):
         count_added = super(ContentResultIntelligentRelations, self).add_content(content_objects)
@@ -103,76 +103,138 @@ class VK_API_Execute(VK_API):
         """
         here is vk script:
 
-var user_identity = Args.user_id;
-var user_id = API.users.get({"user_ids":user_identity})[0].id;
-var next_albums = Args.next_album_ids;
-var last_offset = Args.last_offset;
-var album_ids = null;
-if (next_albums){
-    album_ids = API.photos.getAlbums({"owner_id":user_id, "album_ids":next_albums}).items@.id;
-}else{
-    album_ids = API.photos.getAlbums({"owner_id":user_id, "need_system":1}).items@.id;
-}
-var album_counter = album_ids.length-1;
-var req_counter = 23;
-var photos = [];
-var album_batch = [];
-var offset = 0;
-if (last_offset){
-    offset = parseInt(last_offset);
-}
-var photos_at_album = offset+1;
-while (1){
-    while (photos_at_album - offset > 0){
-        var photos_object = API.photos.get({"owner_id":user_id, "album_id":album_ids[album_counter], "count":1000, "offset":offset, "extended":1});
-        req_counter = req_counter - 1;
-        album_batch.push(photos_object.items);
-        if (req_counter < 0){
-            photos.push(album_batch);
-            return {"photos":photos, "album_ids":album_ids, "next":album_ids.slice(0,album_counter),"last_offset":offset};
+        var user_id = parseInt(Args.user_id);
+        var next_albums = Args.next_album_ids;
+        var last_offset = Args.last_offset;
+
+        var album_ids = null;
+        if (next_albums){
+            album_ids = API.photos.getAlbums({"owner_id":user_id, "album_ids":next_albums}).items@.id;
+        }else{
+            album_ids = API.photos.getAlbums({"owner_id":user_id, "need_system":1}).items@.id;
         }
-        photos_at_album = photos_object.count;
-        offset = offset + 1000;
-    }
-    photos.push(album_batch);
-    album_batch = [];
-    photos_at_album = 1;
-    offset = 0;
-    album_counter = album_counter-1;
-    if (album_counter < 0){
-        return {"photos":photos, "album_ids":album_ids,"next":null, "last_offset":null};
-    }
-}
-
-
+        var album_counter = album_ids.length-1;
+        var req_counter = 23;
+        var photos = [];
+        var album_batch = [];
+        var offset = 0;
+        if (last_offset){
+            offset = parseInt(last_offset);
+        }
+        var photos_at_album = offset+1;
+        while (1){
+            while (photos_at_album - offset > 0){
+                var photos_object = API.photos.get({"owner_id":user_id, "album_id":album_ids[album_counter], "count":1000, "offset":offset, "extended":1});
+                req_counter = req_counter - 1;
+                album_batch = album_batch + photos_object.items;
+                if (req_counter < 0){
+                    photos = photos+album_batch;
+                    return {"photos":photos, "album_ids":album_ids, "next":album_ids.slice(0,album_counter),"last_offset":offset};
+                }
+                photos_at_album = photos_object.count;
+                offset = offset + 1000;
+            }
+            photos = photos+album_batch;
+            album_batch = [];
+            photos_at_album = 1;
+            offset = 0;
+            album_counter = album_counter-1;
+            if (album_counter < 0){
+                return {"photos":photos, "album_ids":album_ids,"next":null, "last_offset":null};
+            }
+        }
         :param user_id: must be user sn_id not screen_name
         :return: all photos from all albums
         """
-        def form_photos_acc(photo_acc):
-            acc = []
-            for album_els in photo_acc:
-                for el in album_els:
-                    if isinstance(el, list):
-                        acc.extend(el)
-                    else:
-                        acc.append(el)
-            return acc
-
-        photos_data = self.get('execute.get_photos', **{'usr_id': user_id})
+        photos_data = self.get('execute.get_photos', **{'user_id': user_id, })
         photos_acc = photos_data['photos']
         while photos_data['next'] or photos_data['last_offset']:
-            photos_data = self.get('get_photos', **{'usr_id': user_id, 'next_album_ids': photos_data['next'],
+            photos_data = self.get('execute.get_photos', **{'user_id': user_id, 'next_album_ids': photos_data['next'],
                                                     'last_offset': photos_data['last_offset']})
             photos_acc.extend(photos_data['photos'])
 
-        result = form_photos_acc(photos_acc)
-        return result
+        return photo_retrieve(photos_acc)
 
+    def get_photos_comments_data(self, user_id):
+        """
+        here is vk script
+
+        var user_id = parseInt(Args.user_id);
+        var req_count = 25;
+        var comments = [];
+        var offset = 0;
+        if (Args.offset){
+         offset = parseInt(Args.offset);
+        }
+        while (1){
+         var response = API.photos.getAllComments({"owner_id":user_id, "need_likes":1, "count":100,"offset":offset});
+         req_count = req_count - 1;
+         comments = comments + response.items;
+         offset = offset + 100;
+         if (response.count < offset){
+             return {"comments":comments};
+         }
+         if (req_count < 1){
+             return {"comments":comments, "last_offset":offset, "all_count":response.count};
+         }
+        }
+
+        :param user_id:
+        :return: all comments of all photos
+        """
+        comments_result = self.get("execute.get_photos_comments", **{'user_id':user_id})
+        comments_acc = comments_result['comments']
+        if comments_result.get('offset'):
+            comments_result = self.get("execute.get_photos_comments", **{'user_id':user_id, 'offset':comments_result.get('offset')})
+            comments_acc.extend(comments_result['comments'])
+        content_result = ContentResultIntelligentRelations(user_id)
+        content_result+= photo_comments_retrieve(comments_acc)
+        return content_result
+
+    def get_videos_data(self, user_id):
+        """
+        here vk_script code:
+        var user_id = parseInt(Args.user_id);
+        var req_count = 25;
+        var comments = [];
+        var offset = 0;
+        if (Args.offset){
+         offset = parseInt(Args.offset);
+        }
+        while (1){
+         var response = API.video.get({"owner_id":user_id, "extended":1, "count":200, "offset":offset});
+         req_count = req_count - 1;
+         comments = comments + response.items;
+         offset = offset + 200;
+         if (response.count < offset){
+             return {"videos":comments};
+         }
+         if (req_count < 1){
+             return {"videos":comments, "last_offset":offset, "all_count":response.count};
+         }
+        }
+
+        :param user_id:
+        :return: all videos of user
+        """
+        videos_result = self.get("execute.get_videos", **{'user_id':user_id})
+        videos_acc = videos_result['videos']
+        if videos_result.get('offset'):
+            videos_result = self.get("execute.get_videos", **{'user_id':user_id, 'offset':videos_result.get('offset')})
+            videos_acc.extend(videos_result['videos'])
+        content_result = ContentResultIntelligentRelations(user_id)
+        content_result+= video_retrieve(videos_acc)
+        return content_result
 
 if __name__ == '__main__':
     # cr = ContentResult()
     # cri = ContentResultIntelligentRelations(1)
     # print isinstance(cri,cr.__class__)
     vk = VK_API_Execute()
-    vk.get_photos_data(114924709)
+    user= vk.get_user_info('togeefly')
+    videos_result = vk.get_videos_data(user.sn_id)
+    print user
+    #photos = vk.get_photos_data(1022960)
+    # photo_comments = vk.get_photos_comments_data(1022960)
+    # len(photo_comments.content)
 
