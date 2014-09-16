@@ -4,7 +4,7 @@ from datetime import datetime
 from contrib.api.vk.utils import photo_retrieve, photo_comments_retrieve, video_retrieve, wall_retrieve, note_retrieve, \
     group_retrieve, subscriptions_retrieve
 from contrib.api.vk.vk import VK_API
-from contrib.api.vk.vk_entities import ContentResult, get_mentioned, VK_APIUser
+from contrib.api.vk.vk_entities import ContentResult, get_mentioned, VK_APIUser, to_unix_time
 
 
 __author__ = '4ikist'
@@ -36,10 +36,40 @@ class ContentResultIntelligentRelations(ContentResult):
                 self.add_relations([(added_content['user']['sn_id'], 'mentions', el)
                                     for el in get_mentioned(added_content.get('text'))])
 
+    def e_i(self, other):
+        """
+        extend intelligent
+        :param other:
+        :return:
+        """
+        if isinstance(other, self.__class__) or isinstance(self, other.__class__):
+            self.add_comments(other.comments)
+            self.add_content(other.content)
+            self.add_relations(other.relations)
+            return self
+        raise ValueError('other is not my classg')
+
+
 
 class VK_API_Execute(VK_API):
+
     def __init__(self):
         super(VK_API_Execute, self).__init__()
+        self.names = {'photo':self.get_photos_data, 'video':self.get_videos_data, 'photo_comments':self.get_photos_comments_data}
+
+    def __get_since(self, new_batch, date):
+        if date:
+            result = []
+            for el in iter(new_batch):
+                if el['date'] > date:
+                    result.append(el)
+            return result
+        return new_batch
+
+    def execute_by_name(self, name, **kwargs):
+        if name in self.names:
+            return self.names[name](**kwargs)
+        return None
 
     def get_user_data(self, user_id):
         """
@@ -92,14 +122,15 @@ class VK_API_Execute(VK_API):
         note_result = note_retrieve(fill_count('notes'))
         # его групы
         group_content_result = group_retrieve(fill_count('groups'), user)
-        content_result += group_content_result + subscription_result + photo_comment_result + photo_result + video_result + wall_result + note_result
+        content_result.e_i(
+            group_content_result + subscription_result + photo_comment_result + photo_result + video_result + wall_result + note_result)
 
         # укажем когда мы загрузили данные
         user['data_load_at'] = datetime.now()
 
         return user, content_result
 
-    def get_photos_data(self, user_id):
+    def get_photos_data(self, user_id, since_date=None):
         """
         here is vk script:
 
@@ -146,16 +177,17 @@ class VK_API_Execute(VK_API):
         :param user_id: must be user sn_id not screen_name
         :return: all photos from all albums
         """
-        photos_data = self.get('execute.get_photos', **{'user_id': user_id, })
-        photos_acc = photos_data['photos']
-        while photos_data['next'] or photos_data['last_offset']:
-            photos_data = self.get('execute.get_photos', **{'user_id': user_id, 'next_album_ids': photos_data['next'],
-                                                    'last_offset': photos_data['last_offset']})
-            photos_acc.extend(photos_data['photos'])
-
+        photos_data = self.get('execute.get_photos', **{'user_id': user_id})
+        photos_acc = self.__get_since(photos_data['photos'], date=since_date)
+        while photos_data.get('next') is not None or photos_data.get('last_offset') is not None:
+            photos_data = self.get('execute.get_photos', **{'user_id': user_id,
+                                                            'next_album_ids': photos_data['next'],
+                                                            'last_offset': photos_data['last_offset']})
+            photos_acc.extend(self.__get_since(photos_data['photos'], date=since_date))
         return photo_retrieve(photos_acc)
 
-    def get_photos_comments_data(self, user_id):
+
+    def get_photos_comments_data(self, user_id, since_date=None):
         """
         here is vk script
 
@@ -182,16 +214,17 @@ class VK_API_Execute(VK_API):
         :param user_id:
         :return: all comments of all photos
         """
-        comments_result = self.get("execute.get_photos_comments", **{'user_id':user_id})
-        comments_acc = comments_result['comments']
+        comments_result = self.get("execute.get_photos_comments", **{'user_id': user_id})
+        comments_acc = self.__get_since(comments_result['comments'], since_date)
         if comments_result.get('offset'):
-            comments_result = self.get("execute.get_photos_comments", **{'user_id':user_id, 'offset':comments_result.get('offset')})
-            comments_acc.extend(comments_result['comments'])
+            comments_result = self.get("execute.get_photos_comments",
+                                       **{'user_id': user_id, 'offset': comments_result.get('offset')})
+            comments_acc.extend(self.__get_since(comments_result['comments'], since_date))
         content_result = ContentResultIntelligentRelations(user_id)
-        content_result+= photo_comments_retrieve(comments_acc)
+        content_result += photo_comments_retrieve(comments_acc)
         return content_result
 
-    def get_videos_data(self, user_id):
+    def get_videos_data(self, user_id, since_date=None):
         """
         here vk_script code:
         var user_id = parseInt(Args.user_id);
@@ -217,24 +250,34 @@ class VK_API_Execute(VK_API):
         :param user_id:
         :return: all videos of user
         """
-        videos_result = self.get("execute.get_videos", **{'user_id':user_id})
-        videos_acc = videos_result['videos']
+        videos_result = self.get("execute.get_videos", **{'user_id': user_id})
+        videos_acc = self.__get_since(videos_result['videos'], since_date)
         if videos_result.get('offset'):
-            videos_result = self.get("execute.get_videos", **{'user_id':user_id, 'offset':videos_result.get('offset')})
-            videos_acc.extend(videos_result['videos'])
+            videos_result = self.get("execute.get_videos",
+                                     **{'user_id': user_id, 'offset': videos_result.get('offset')})
+            videos_acc.extend(self.__get_since(videos_result['videos'], since_date))
         content_result = ContentResultIntelligentRelations(user_id)
-        content_result+= video_retrieve(videos_acc)
+        content_result += video_retrieve(videos_acc)
         return content_result
+
+
+def test_asc(acc):
+    for i, el in enumerate(acc):
+        if i > 0 or i < len(acc) - 1:
+            if not (acc[i - 1]['date'] >= el['date'] and el['date'] >= acc[i + 1]['date']):
+                return (acc[i - 1], acc[i], acc[i + 1])
+
 
 if __name__ == '__main__':
     # cr = ContentResult()
     # cri = ContentResultIntelligentRelations(1)
     # print isinstance(cri,cr.__class__)
     vk = VK_API_Execute()
-    user= vk.get_user_info('togeefly')
-    videos_result = vk.get_videos_data(user.sn_id)
-    print user
-    #photos = vk.get_photos_data(1022960)
-    # photo_comments = vk.get_photos_comments_data(1022960)
+    # user = vk.get_user_info('togeefly')
+    # photos_result = vk.get_photos_data(user.sn_id)
+    # last_photo = photos_result.content[4]
+    # next_photo_result = vk.get_photos_data(user.sn_id, last_photo.sn_id)
+    # photos = vk.get_photos_data(1022960)
+    photo_comments = vk.get_photos_comments_data(1022960)
     # len(photo_comments.content)
 

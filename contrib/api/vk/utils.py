@@ -13,6 +13,7 @@ def persist_content_result(content_result, user_id, persist, vk):
     Пользователей загружает скопом
     :param content_result: контент который сохраняем
     :param user_id: идентификатор пользователя которого сохраняем
+
     :return:
     """
     output_users = []
@@ -23,6 +24,8 @@ def persist_content_result(content_result, user_id, persist, vk):
             if not persist.is_loaded(new_user_id):
                 not_loaded_users.append(new_user_id)
             output_users.append(new_user_id)
+    if content_result is None:
+        return
 
     for from_id, rel_type, to_id in content_result.relations:
         if rel_type not in rel_types_groups:  # если связь не с группой

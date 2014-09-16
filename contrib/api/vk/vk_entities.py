@@ -2,6 +2,7 @@
 from collections import defaultdict
 from functools import partial
 import datetime
+import time
 from itertools import chain
 import html2text
 
@@ -23,7 +24,7 @@ iterated_counters = {'subscriptions': 200,
                      'groups': 1000}
 
 unix_time = lambda x: datetime.datetime.fromtimestamp(int(x))
-
+to_unix_time = lambda x: int(time.mktime(x.timetuple()))
 
 def get_mentioned(text):
     """
@@ -63,7 +64,7 @@ class VK_APIUser(APIUser):
             bdate = data_dict.get('bdate')
             if len(bdate) > 4:
                 data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
-            if len(bdate)<6 and len(bdate)>2:
+            if len(bdate) < 6 and len(bdate) > 2:
                 data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m')
         if data_dict.get('last_seen'):
             data_dict['last_visit'] = unix_time(data_dict['last_seen']['time'])
@@ -120,7 +121,7 @@ class VK_APISocialObject(APISocialObject):
 class ContentResult(object):
     def __init__(self):
         self._content = []
-        # {from:{type:[to1,to2,to3]}}
+        # {from:{type1:[to1,to2,to3], type2:[to1,to2,to3]}}
         self._relations = defaultdict(partial(defaultdict, list))
         self._comments = []
 
@@ -131,6 +132,18 @@ class ContentResult(object):
         elif isinstance(object, object_type):
             object_acc.append(object)
             return 1
+
+    def __concatenate_relations(self, other_relations):
+        for from_, types_and_tos in other_relations.iteritems():
+            if len(self._relations.get(from_)):
+                for type_, tos in other_relations[from_].iteritems():
+                    if type_ not in rel_types_groups:
+                        self._relations[from_][type_].extend(tos)
+                    else:
+                        tos = list(set(self._relations[from_][type_] + other_relations[from_][type_]))
+                        self._relations[from_][type_] = tos
+            else:
+                self._relations[from_] = types_and_tos
 
     def __add_relation(self, relation):
         """
@@ -199,9 +212,9 @@ class ContentResult(object):
 
     def __radd__(self, other):
         if isinstance(other, self.__class__) or isinstance(self, other.__class__):
-            self.add_content(other.content)
-            self.add_comments(other.comments)
-            self.add_relations(other.relations)
+            self._content += other._content
+            self._comments += other._comments
+            self.__concatenate_relations(other._relations)
             return self
         else:
             raise ValueError("+ operator with not ContentResult object")
@@ -211,4 +224,13 @@ class ContentResult(object):
 
     def __add__(self, other):
         return self.__radd__(other)
+
+
+if __name__ == '__main__':
+    cr1 = ContentResult()
+    cr1.add_relations([(1, 'member', 1), (1, 'member', 2), (2, 'comment', 1), (2, 'comment', 2)])
+    cr2 = ContentResult()
+    cr2.add_relations([(1, 'member', 1), (1, 'comment', 2), (2, 'member', 1), (2, 'comment', 1)])
+    cr1+=cr2
+    print cr1.relations
 

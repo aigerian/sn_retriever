@@ -303,10 +303,14 @@ class Persistent(object):
         self.social_objects = self.database['social_objects']
         self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
         self.__create_index(self.social_objects, 'source', ASCENDING, False)
+        self.__create_index(self.social_objects, 'type', ASCENDING, False)
 
         self.content_objects = self.database['content_objects']
-        self.__create_index(self.social_objects, 'sn_id', ASCENDING, True)
-        self.__create_index(self.social_objects, 'source', ASCENDING, False)
+        self.__create_index(self.content_objects, 'sn_id', ASCENDING, True)
+        self.__create_index(self.content_objects, 'source', ASCENDING, False)
+        self.__create_index(self.content_objects, 'type', ASCENDING, False)
+        self.__create_index(self.content_objects, 'create_date', ASCENDING, False)
+        self.__create_index(self.content_objects, 'user_id', ASCENDING, False)
 
         self.not_loaded_users = self.database['not_loaded_users']
 
@@ -345,7 +349,7 @@ class Persistent(object):
         self.changes.save(changes)
 
 
-    def get_observed_users_ids(self,update_iteration_time, source):
+    def get_observed_users_ids(self, update_iteration_time, source):
         """
         Возвращает пользователей за которыми следует последить
         :param update_iteration_time: то количество секунд до которого не следим
@@ -354,7 +358,7 @@ class Persistent(object):
         """
         actual_date = datetime.datetime.now() - datetime.timedelta(seconds=update_iteration_time)
         result = {}
-        for user_data in self.get_users_iter({'update_date': {'$lte': actual_date}, 'source':source}):
+        for user_data in self.get_users_iter({'update_date': {'$lte': actual_date}, 'source': source}):
             result[user_data.sn_id] = user_data
             if len(result) == 1000:
                 yield result
@@ -451,25 +455,27 @@ class Persistent(object):
         if message:
             return APIMessage(message)
 
-    def save_message(self, message):
-        """
-        saving message. message must be a dict with field user, this field must be a DbRef or dict ith sn_id of some user in db
-        """
-        if not isinstance(message.get('user'), DBRef):
+    def __form_user_ref(self, users_object):
+        if not isinstance(users_object.get('user'), DBRef):
             try:
-                user_sn_id = int(message.get('user').get('sn_id'))
+                user_sn_id = int(users_object.get('user').get('sn_id'))
             except ValueError:
-                user_sn_id = message.get('user').get('sn_id')
+                user_sn_id = users_object.get('user').get('sn_id')
             if user_sn_id is None:
                 raise DataBaseMessageException('User sn_id can not be None')
             user = self.get_user(sn_id=user_sn_id)
             if user:
                 user_ref = self.get_user_ref(user)
-                message['user'] = user_ref
-                message['user_id'] = user_sn_id
+                users_object['user'] = user_ref
+                users_object['user_id'] = user_sn_id
             else:
                 raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
 
+    def save_message(self, message):
+        """
+        saving message. message must be a dict with field user, this field must be a DbRef or dict ith sn_id of some user in db
+        """
+        self.__form_user_ref(message)
         result = self._save_or_update_object(self.messages, message['sn_id'], message)
         return result
 
@@ -478,8 +484,15 @@ class Persistent(object):
         return result
 
     def save_content_object(self, s_object):
+        self.__form_user_ref(s_object)
         result = self._save_or_update_object(self.content_objects, s_object['sn_id'], s_object)
         return result
+
+    def get_last_content_of_user(self, user_id, content_type):
+        result = list(self.content_objects.find(spec={'user_id': user_id, 'type': content_type}, limit=1, sort=[('create_date', -1)]))
+        if len(result):
+            return result[0]
+        return None
 
     def retrieve_relations_for_diff(self, from_id, relation_type):
         result = [int(el) for el in self.redis.get_relations_and_remove(from_id, relation_type)]
