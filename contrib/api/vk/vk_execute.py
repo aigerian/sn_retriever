@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from contrib.api.vk.utils import photo_retrieve, photo_comments_retrieve, video_retrieve, wall_retrieve, note_retrieve, \
-    group_retrieve, subscriptions_retrieve
+    group_retrieve, subscriptions_retrieve, comments_retrieve
 from contrib.api.vk.vk import VK_API
 from contrib.api.vk.vk_entities import ContentResult, get_mentioned, VK_APIUser, to_unix_time
 
@@ -50,12 +50,14 @@ class ContentResultIntelligentRelations(ContentResult):
         raise ValueError('other is not my classg')
 
 
-
 class VK_API_Execute(VK_API):
-
     def __init__(self):
         super(VK_API_Execute, self).__init__()
-        self.names = {'photo':self.get_photos_data, 'video':self.get_videos_data, 'photo_comments':self.get_photos_comments_data}
+        self.names = {'photos': self.get_photos_data,
+                      'videos': self.get_videos_data,
+                      'photo_comments': self.get_photos_comments_data,
+                      'notes': self.get_notes_data,
+                      'wall': self.get_wall_data}
 
     def __get_since(self, new_batch, date):
         if date:
@@ -186,7 +188,6 @@ class VK_API_Execute(VK_API):
             photos_acc.extend(self.__get_since(photos_data['photos'], date=since_date))
         return photo_retrieve(photos_acc)
 
-
     def get_photos_comments_data(self, user_id, since_date=None):
         """
         here is vk script
@@ -221,7 +222,7 @@ class VK_API_Execute(VK_API):
                                        **{'user_id': user_id, 'offset': comments_result.get('offset')})
             comments_acc.extend(self.__get_since(comments_result['comments'], since_date))
         content_result = ContentResultIntelligentRelations(user_id)
-        content_result += photo_comments_retrieve(comments_acc)
+        content_result += photo_comments_retrieve(comments_acc, user_id)
         return content_result
 
     def get_videos_data(self, user_id, since_date=None):
@@ -260,6 +261,109 @@ class VK_API_Execute(VK_API):
         content_result += video_retrieve(videos_acc)
         return content_result
 
+    def get_notes_data(self, user_id, since_date=None):
+        """
+        here is vk script
+        var user_id = parseInt(Args.user_id);
+        var req_count = 25;
+        var comments = [];
+        var offset = 0;
+        if (Args.offset){
+         offset = parseInt(Args.offset);
+        }
+        while (1){
+         var response = API.notes.get({"user_id":user_id, "count":100, "offset":offset});
+         req_count = req_count - 1;
+         comments = comments + response.items;
+         offset = offset + 100;
+         if (response.count < offset){
+             return {"notes":comments};
+         }
+         if (req_count < 1){
+             return {"notes":comments, "last_offset":offset, "all_count":response.count};
+         }
+        }
+
+        :param user_id:
+        :param since_date:
+        :return:
+        """
+        notes_result = self.get("execute.get_notes", **{'user_id': user_id})
+        notes_acc = self.__get_since(notes_result['notes'], since_date)
+        if notes_result.get('offset'):
+            notes_result = self.get("execute.get_notes",
+                                    **{'user_id': user_id, 'offset': notes_result.get('offset')})
+            notes_acc.extend(self.__get_since(notes_result['notes'], since_date))
+        content_result = ContentResultIntelligentRelations(user_id)
+        content_result += note_retrieve(notes_acc)
+        return content_result
+
+    def get_comments_data(self, user_id, object_type, object_id, since_date=None):
+        """
+        all scripts with postfix '_comments' exclude photo_comments
+        :param user_id: user sn_id (int)
+        :param object_type: must be [wall, video, note]
+        :param object_id: not sn_id it must be identity deviate in user (post_id, video_id, note_id)
+        :return:
+        """
+        result = self.get('execute.get_%s_comments' % object_type, **{'user_id': user_id, 'entity_id': object_id})
+        result_acc = self.__get_since(result['comments'], since_date)
+        if result.get('offset'):
+            result = self.get('execute.get_%s_comments' % object_type,
+                              **{'user_id': user_id, 'entity_id': object_id, "offset": result.get('offset')})
+            result_acc.extend(self.__get_since(result['comments'], since_date))
+        return comments_retrieve(result_acc, user_id, object_type, object_id)
+
+    def get_likers(self, user_id, object_id, object_type):
+        result = self.get('execute.get_likers',
+                          **{'user_id': user_id, 'entity_id': object_id, 'entity_type': object_type})
+        result_acc = result['likers']
+        if result.get('offset'):
+            result = self.get('execute.get_likers',
+                              **{'user_id': user_id, 'entity_id': object_id, 'entity_type': object_type,
+                                 "offset": result.get('offset')})
+            result_acc.extend(result['likers'])
+        content_result = ContentResult()
+        content_result.add_relations([(el, 'likes', user_id) for el in result_acc])
+        return content_result
+
+
+    def get_wall_data(self, user_id, since_date=None):
+        """
+        this vk script
+        var user_id = parseInt(Args.user_id);
+        var req_count = 25;
+        var comments = [];
+        var offset = 0;
+        if (Args.offset){
+         offset = parseInt(Args.offset);
+        }
+        while (1){
+         var response = API.wall.get({"owner_id":user_id, "count":100, "offset":offset, "extended":1,"filter":"all"});
+         req_count = req_count - 1;
+         comments = comments + response.items;
+         offset = offset + 100;
+         if (response.count < offset){
+             return {"wall":comments};
+         }
+         if (req_count < 1){
+             return {"wall":comments, "last_offset":offset, "all_count":response.count};
+         }
+        }
+        :param user_id:
+        :param since_date:
+        :return:
+        """
+        wall_result = self.get("execute.get_wall", **{'user_id': user_id})
+        wall_acc = self.__get_since(wall_result['wall'], since_date)
+        if wall_result.get('offset'):
+            wall_result = self.get("execute.get_wall",
+                                   **{'user_id': user_id, 'offset': wall_result.get('offset')})
+            wall_acc.extend(self.__get_since(wall_result['wall'], since_date))
+        content_result = ContentResultIntelligentRelations(user_id)
+        content_result += wall_retrieve(wall_acc)
+        return content_result
+
 
 def test_asc(acc):
     for i, el in enumerate(acc):
@@ -269,15 +373,24 @@ def test_asc(acc):
 
 
 if __name__ == '__main__':
-    # cr = ContentResult()
-    # cri = ContentResultIntelligentRelations(1)
-    # print isinstance(cri,cr.__class__)
     vk = VK_API_Execute()
-    # user = vk.get_user_info('togeefly')
-    # photos_result = vk.get_photos_data(user.sn_id)
-    # last_photo = photos_result.content[4]
-    # next_photo_result = vk.get_photos_data(user.sn_id, last_photo.sn_id)
-    # photos = vk.get_photos_data(1022960)
-    photo_comments = vk.get_photos_comments_data(1022960)
-    # len(photo_comments.content)
+    photos = vk.get_photos_data('266544674')
+    photo = photos.content[0]
+    photo_comments = vk.get_photos_comments_data('266544674')
+    photo_comment = photo_comments.comments[0]
 
+    videos = vk.get_videos_data('266544674')
+    video = videos.content[0]
+    video_comments = vk.get_comments_data('266544674', 'video', video['video_id'])
+    video_comment = video_comments.comments[0]
+
+    wall = vk.get_wall_data('266544674')
+    wall_post = wall.content[0]
+    wall_comments = vk.get_comments_data('266544674', 'wall', wall_post['wall_post_id'])
+    wall_comment = wall_comments.comments[0]
+
+    wall_comment_likers = vk.get_likers('266544674', wall_comment['comment_id'], 'comment', )
+    photo_comment_likers = vk.get_likers('266544674', photo_comment['comment_id'], 'photo_comment', )
+    video_comment_likers = vk.get_likers('266544674', video_comment['comment_id'], 'video_comment', )
+
+    print 'fooo'

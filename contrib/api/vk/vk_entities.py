@@ -135,7 +135,7 @@ class ContentResult(object):
 
     def __concatenate_relations(self, other_relations):
         for from_, types_and_tos in other_relations.iteritems():
-            if len(self._relations.get(from_)):
+            if from_ in self._relations and len(self._relations[from_]):
                 for type_, tos in other_relations[from_].iteritems():
                     if type_ not in rel_types_groups:
                         self._relations[from_][type_].extend(tos)

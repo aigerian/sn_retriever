@@ -51,4 +51,4 @@ if __name__ == '__main__':
                 if len(changes) > 2:
                     log.info("found change for user %s" % updated_user.sn_id)
                     persist.save_user_changes(changes)
-                    persist_content_result(content_result, updated_user.sn_id, persist)
+                    persist_content_result(content_result, updated_user.sn_id, persist, vk)
