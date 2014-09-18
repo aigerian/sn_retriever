@@ -467,9 +467,10 @@ class Persistent(object):
             if user:
                 user_ref = self.get_user_ref(user)
                 users_object['user'] = user_ref
-                users_object['user_id'] = user_sn_id
             else:
-                raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
+                self.not_loaded_users.save({'_id': user_sn_id})
+                # raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
+            users_object['user_id'] = user_sn_id
 
     def save_message(self, message):
         """
@@ -489,7 +490,8 @@ class Persistent(object):
         return result
 
     def get_last_content_of_user(self, user_id, content_type):
-        result = list(self.content_objects.find(spec={'user_id': user_id, 'type': content_type}, limit=1, sort=[('create_date', -1)]))
+        result = list(self.content_objects.find(spec={'user_id': user_id, 'type': content_type}, limit=1,
+                                                sort=[('create_date', -1)]))
         if len(result):
             return result[0]
         return None
