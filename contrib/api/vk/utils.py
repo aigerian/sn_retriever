@@ -3,9 +3,12 @@ import datetime
 from contrib.api.vk.vk_entities import ContentResult, VK_APIContentObject, VK_APIMessage, VK_APISocialObject, \
     rel_types_groups, \
     unix_time
+import properties
 
 
 __author__ = '4ikist'
+
+log = properties.logger.getChild('vk_utils')
 
 
 def persist_content_result(content_result, user_id, persist, vk):
@@ -32,8 +35,8 @@ def persist_content_result(content_result, user_id, persist, vk):
     for from_id, rel_type, to_id in content_result.relations:
         if rel_type not in rel_types_groups:  # если связь не с группой
             add_new_user(from_id), add_new_user(to_id)
-        persist.save_relation(from_id, rel_type, to_id)
-
+        persist.save_relation(from_id, to_id, rel_type)
+    log.info("found %s related and not loaded users" % len(not_loaded_users))
     users = vk.get_users_info(not_loaded_users)
     persist.save_object_batch(users)
     persist.save_object_batch(content_result.get_content_to_persist())
@@ -59,7 +62,7 @@ def photo_retrieve(photo_elements):
                                              'likes_count': el['likes']['count'],
                                              'photo_id': el['id'],
                                              'type': 'photo',
-                                             'tags': el['tags']['count']})
+                                             'tags': el['tags']['count'] if el.get('tags') else None})
         content_result.add_content(photo_content)
     return content_result
 
@@ -72,7 +75,7 @@ def photo_comments_retrieve(photo_comments_elements, user_id):
                                        'created_at': unix_time(el['date']),
                                        'user': {'sn_id': el['from_id']},
                                        'likes_count': el['likes']['count']},
-                                      comment_for={'sn_id': '%s_photo_%s' % (el['pid'], user_id)},
+                                      comment_for={'sn_id': '%s_photo_%s' % (el['pid'], user_id), 'type': 'photo'},
                                       comment_id=el['id'])
         content_result.add_comments(photo_comment)
         content_result.add_relations((el['from_id'], 'comment', user_id))
@@ -96,11 +99,12 @@ def comments_retrieve(comments_elements, user_id, object_type, object_id):
              'created_at': unix_time(comment_data['date']),
              'user': {'sn_id': comment_data['from_id']},
              'likes_count': comment_data['likes']['count']},
-            comment_for={'%s_id' % object_type: object_id},
+            comment_for={'sn_id': '%s_%s_%s' % (object_id, object_type, user_id), 'type': object_type},
             comment_id=comment_data['id'])
         if 'reply_to_user' in comment_data and 'reply_to_comment' in comment_data:
             comment['reply_to'] = {
-            'sn_id': 'comment_%s_for[%s_%s_%s]' % (comment_data['reply_to_comment'], object_id, object_type, user_id)}
+                'sn_id': 'comment_%s_for[%s_%s_%s]' % (
+                    comment_data['reply_to_comment'], object_id, object_type, user_id)}
         content_result.add_comments(comment)
         content_result.add_relations((comment_data['from_id'], 'comment', user_id))
     return content_result
@@ -144,20 +148,34 @@ def wall_retrieve(wall_elements):
             wall_post['attachments'] = []
             for attachment in wall_post_data['attachments']:
                 att_type = attachment.get('type')
-                if att_type in ('photo', 'posted_photo', 'video', 'note', 'poll', 'album'):
+                if att_type in ('photo', 'posted_photo', 'video', 'note', 'album'):
                     wall_post['attachments'].append({'type': att_type, 'sn_id': attachment[att_type]['id']})
+                    wall_post['text'] += "%s %s" % (
+                    attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
+                elif att_type == 'link':
+                    wall_post['attachments'].append({'type': att_type, 'url': attachment[att_type]['link']})
+                    wall_post['text'] += "%s %s" % (
+                    attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
                 elif att_type == 'page':
-                    wall_post['attachments'].append({'type': att_type, 'sn_id': attachment[att_type]['id'],
-                                                     'group_id': attachment[att_type]['group_id']})
+                    wall_post['attachments'].append({'type': att_type, 'group_id': attachment[att_type]['group_id'],
+                                                     'page_id': attachment[att_type]['id']})
+                    wall_post['text'] += "%s %s" % (
+                    attachment[att_type].get('title', ''), attachment[att_type].get('source', ''))
+                elif att_type == 'poll':
+                    wall_post['attachments'].append({'type': att_type, 'poll_id': attachment[att_type]['id']})
+                    wall_post['text'] += attachment[att_type].get('question', '')
+                elif att_type == 'doc':
+                    wall_post['attachments'].append({'type': att_type, 'doc_id': attachment[att_type]['id']})
+                    wall_post['text'] += attachment[att_type].get('title', '')
         if 'copy_history' in wall_post_data:
             repost = wall_post_data['copy_history'][0]
             wall_post['repost_of'] = {'id': repost['id'], 'user_id': repost['owner_id'],
                                       'sn_id': '%s_wall_post_%s' % (repost['id'], repost['owner_id'])}
         if 'reply_owner_id' in wall_post_data and 'reply_post_id' in wall_post_data:
-            wall_post['repost_of'] = {'id': repost['id'],
-                                      'user_id': repost['owner_id'],
+            wall_post['repost_of'] = {'id': wall_post_data['reply_post_id'],
+                                      'user_id': wall_post_data['reply_owner_id'],
                                       'sn_id': '%s_wall_post_%s' % (
-                                          wall_post_data['reply_post_id'], repost['reply_owner_id'])}
+                                          wall_post_data['reply_post_id'], wall_post_data['reply_owner_id'])}
         content_result.add_content(wall_post)
     return content_result
 
@@ -188,9 +206,9 @@ def group_retrieve(group_elements, user):
 def subscriptions_retrieve(subscription_elements, user):
     content_result = ContentResult()
     for el in subscription_elements:
-        if el['is_admin']:
+        if el.get('is_admin'):
             content_result.add_relations((user.sn_id, 'admin', el['id']))
-        elif el['is_member']:
+        elif el.get('is_member'):
             content_result.add_relations((user.sn_id, 'member', el['id']))
         else:
             content_result.add_relations((user.sn_id, 'subscribe', el['id']))

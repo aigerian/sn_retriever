@@ -2,7 +2,7 @@
 from collections import defaultdict
 from functools import partial
 from itertools import chain
-from contrib.api.entities import API, APIException, APISocialObject
+from contrib.api.entities import API, APIException, APISocialObject, APIResponseException
 from contrib.api.vk.vk_entities import VK_APIUser, rel_types_groups, ContentResult, VK_APIMessage, unix_time, \
     VK_APIContentObject, get_mentioned
 import properties
@@ -17,11 +17,6 @@ import re
 import urlparse
 from lxml import html
 import requests
-
-
-
-
-
 
 
 comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
@@ -138,6 +133,8 @@ class VK_API(API):
         while 1:
             params = dict({'access_token': self.access_token, 'v': properties.vk_api_version}, **kwargs)
             result = requests.get('%s%s' % (self.base_url, method_name), params=params)
+            if result.status_code != 200:
+                raise APIResponseException("could not load because: %s" % result.reason)
             try:
                 result_object = json.loads(result.content)
             except Exception as e:
@@ -412,16 +409,40 @@ class VK_API(API):
         return user
 
     def get_users_info(self, uids):
+        # TODO update algorithm!
+        """
+        retrieving all users
+        :param uids:
+        :return:
+        """
+        if len(uids) == 0:
+            return []
         command = 'users.get'
-        users = []
-        for i in xrange((len(uids) / 1000) + 1):
-            batch = uids[i * 1000:(i + 1) * 1000]
-            kwargs = {'user_ids': ', '.join([str(el) for el in batch]),
-                      'fields': properties.vk_user_fields}
-            result = self.get(command, **kwargs)
-            for el in result:
-                users.append(VK_APIUser(el))
-        return users
+        count_batch = 300
+        loaded_users = []
+        while 1:
+            users = []
+            try:
+                for i in xrange((len(uids[len(loaded_users):]) / count_batch) + 1):
+                    batch = uids[i * count_batch:(i + 1) * count_batch]
+                    kwargs = {'user_ids': ', '.join([str(el) for el in batch]),
+                              'fields': properties.vk_user_fields}
+
+                    result = self.get(command, **kwargs)
+                    for el in result:
+                        users.append(VK_APIUser(el))
+                    loaded_users.extend(users)
+            except APIResponseException as e:
+                self.log.warn(
+                    "can not load batch of users with batch len %s, trying with %s" % (count_batch, count_batch - 50))
+                if count_batch > 50:
+                    count_batch -= 50
+                    continue
+                else:
+                    self.log.warn("something bad... i can not load batch of this users :( only %s of %s" % (
+                    len(loaded_users), len(uids)))
+
+            return loaded_users
 
     def _fill_comment_likers(self, comment, comment_type='comment'):
         """
@@ -650,7 +671,6 @@ class VK_API(API):
         except APIException as e:
             self.log.info('can not load comments/likers of wall posts for user_id: %s\nbecause:%s' % (user_id, e))
         return contentResult
-
 
 
 def _take_by(lst, by=1):

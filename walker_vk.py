@@ -12,7 +12,7 @@ import properties
 
 __author__ = '4ikist'
 
-persist = Persistent()
+persist = Persistent(truncate=True)
 
 log = logger.getChild('walker_ttr')
 vk = VK_API_Execute()
@@ -24,10 +24,9 @@ def persist_all_user_data_and_retrieve_related(user_id):
     if saved_user and 'data_load_at' in saved_user and (
                 datetime.now() - saved_user['data_load_at']).total_seconds() < properties.update_iteration_time:
         log.info('user %s was load but date of load data is so far' % saved_user.screen_name)
-        return reduce(lambda x, y: x.extend(y),
-                      [persist.get_related_users(saved_user.sn_id, relation_type=el, only_sn_ids=True) for el in
-                       rel_types_users],
-            [])
+        related_users = [persist.get_related_users(saved_user.sn_id, relation_type=el, only_sn_ids=True) for el in
+                         rel_types_users]
+        return reduce(lambda x, y: x+y, related_users, [])
 
     user, result_object = vk.get_user_data(user_id)
     log.info("user [%s (%s)] data was retrieved, saving..." % (user.screen_name, user.name))

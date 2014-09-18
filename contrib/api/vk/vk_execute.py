@@ -115,7 +115,7 @@ class VK_API_Execute(VK_API):
         subscription_result = subscriptions_retrieve(fill_count('subscriptions'), user)
         # его фотографии и комментарии к ним
         photo_result = photo_retrieve(fill_count('photos'))
-        photo_comment_result = photo_comments_retrieve(fill_count('photo_comments'))
+        photo_comment_result = photo_comments_retrieve(fill_count('photo_comments'),user.sn_id)
         # его видеозаписи
         video_result = video_retrieve(fill_count('videos'))
         # его стена

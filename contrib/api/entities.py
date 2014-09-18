@@ -74,6 +74,9 @@ class APIRequestOverflowException(Exception):
 class APIException(Exception):
     pass
 
+class APIResponseException(Exception):
+    pass
+
 
 class APIContentObject(dict):
     def __init__(self, data_dict):

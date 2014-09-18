@@ -48,7 +48,7 @@ class VK_APIUser(APIUser):
         data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id', None)
         if data_dict.get('bdate'):
             bdate = data_dict.get('bdate')
-            if len(bdate) > 4:
+            if len(bdate) >= 6:
                 data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
             if len(bdate) < 6 and len(bdate) > 2:
                 data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m')
