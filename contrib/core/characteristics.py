@@ -1,6 +1,6 @@
 from collections import Counter
 from contrib.api.entities import APIUser
-from contrib.api.ttr import __TTR_API
+from contrib.api.ttr import TTR_API
 from contrib.core.tracking import TTR_Tracking
 from contrib.db.database_engine import Persistent
 
@@ -406,7 +406,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
 
 
 if __name__ == '__main__':
-    api = __TTR_API()
+    api = TTR_API()
     db = Persistent()
     ch = TTR_Characterisitcs(db, api)
     user = api.get_user(screen_name='@linoleum2k12')

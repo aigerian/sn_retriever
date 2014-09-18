@@ -48,20 +48,24 @@ class ProxySession(Session):
                 return result
 
 
-# TODO refactor!
+def delete_fields_with_prefix(data, prefixes, l=True, r=False):
+    to_replace = []
+    if isinstance(prefixes, (str,unicode)):
+        prefixes = [prefixes]
+
+    for k, v in data.iteritems():
+        if isinstance(k, (str, unicode)):
+            for prefix in prefixes:
+                if l and k.startswith(prefix):
+                    to_replace.append(k)
+                if r and k.endswith(prefix):
+                    to_replace.append(k)
+    for el in to_replace:
+        data.pop(el, None)
+
+
 class API(object):
-    def __auth(self):
-        pass
-
-    def get(self, method_name, **kwargs):
-        pass
-
-    def get_relations(self, user_id, relation_type='friends'):
-        pass
-
-    def search(self, q):
-        pass
-
+    pass
 
 class APIRequestOverflowException(Exception):
     pass

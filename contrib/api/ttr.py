@@ -3,7 +3,7 @@ import random
 from datetime import datetime, timedelta
 import time
 from birdy.twitter import UserClient, BirdyException, TwitterApiError, TwitterClientError
-from contrib.api.entities import APIUser, APIMessage
+from contrib.api.entities import APIUser, APIMessage, delete_fields_with_prefix
 from contrib.api.proxy import ProxyHandler
 import properties
 
@@ -77,9 +77,7 @@ class TTRLimitHandler(object):
                 [(el, None if el != credential_number else request_time) for el in xrange(1, max_apps_count)])
 
 
-class __TTR_API(object):
-    work_end = 'work_end'
-
+class TTR_API(object):
     def __init__(self):
         self.credential_number = 1
         self.proxy_handler = ProxyHandler()
@@ -106,7 +104,7 @@ class __TTR_API(object):
         self.client = UserClient(**self.__get_client_params(use_proxy))
         return self.client
 
-    def __get_data(self, callback, **kwargs):
+    def get(self, callback, **kwargs):
         request_name = self.__get_request_name(callback)
         use_proxy = False
         while True:
@@ -136,7 +134,7 @@ class __TTR_API(object):
                 self.limit_handler.consider_credentials_number(request_name, cred_number, request_time)
 
     def get_relation_ids(self, user, relation_type='friends', from_cursor=-1):
-        response = self.__get_data(self.client.api[relation_type].ids.get,
+        response = self.get(self.client.api[relation_type].ids.get,
                                    user_id=user.get('sn_id'),
                                    count=5000,
                                    cursor=from_cursor)
@@ -146,7 +144,7 @@ class __TTR_API(object):
     def get_relations(self, user, relation_type='friends', from_cursor=-1):
         cursor = from_cursor
         while True:
-            response = self.__get_data(self.client.api[relation_type].list.get,
+            response = self.get(self.client.api[relation_type].list.get,
                                        user_id=user['sn_id'],
                                        count=200,
                                        cursor=cursor,
@@ -179,7 +177,7 @@ class __TTR_API(object):
         elif isinstance(user_two, (int, long)):
             params['target_id'] = user_two
 
-        response = self.__get_data(self.client.api.friendships.show.get, **params)
+        response = self.get(self.client.api.friendships.show.get, **params)
         if response:
             result = {'one_to_two': False, 'two_to_one': False}
             if response.data.relationship.source.followed_by:
@@ -189,7 +187,7 @@ class __TTR_API(object):
             return result
 
     def get_user(self, **kwargs):
-        response = self.__get_data(self.client.api.users.show.get, **kwargs)
+        response = self.get(self.client.api.users.show.get, **kwargs)
         if response:
             return self._form_user(response.data)
         else:
@@ -197,7 +195,7 @@ class __TTR_API(object):
 
     def get_users(self, ids=None, screen_names=None):
         def fill_data(request_params):
-            response = self.__get_data(self.client.api.users.lookup.get, **request_params)
+            response = self.get(self.client.api.users.lookup.get, **request_params)
             if response:
                 for user in response.data:
                     result_ids.add(user.get('sn_id'))
@@ -228,7 +226,7 @@ class __TTR_API(object):
         :return: message and user
         """
         params = {'id': message_id, 'trim_user': False, 'include_entities': True, 'include_my_retweet': False}
-        response = self.__get_data(self.client.api.statuses.show.get, **params)
+        response = self.get(self.client.api.statuses.show.get, **params)
         user = response.data.user
         if response.data:
             return self._form_message(response.data), self._form_user(user)
@@ -244,7 +242,7 @@ class __TTR_API(object):
         """
         max_id = max_id
         while True:
-            response = self.__get_data(self.client.api.statuses.user_timeline.get,
+            response = self.get(self.client.api.statuses.user_timeline.get,
                                        user_id=user.get('sn_id'),
                                        count=200,
                                        trim_user=True,
@@ -279,14 +277,14 @@ class __TTR_API(object):
                 params['until'] = until.strftime("%Y-%m-%d")
             if max_id:
                 params['max_id'] = max_id
-            response = self.__get_data(self.client.api.search.tweets.get, **params)
+            response = self.get(self.client.api.search.tweets.get, **params)
             if response and len(response.data.statuses):
                 statuses = copy(response.data.statuses)
                 max_id = statuses[-1][u'id']
                 if batch_count:
                     for i in range(len(statuses)):
                         yield [self._form_message(el) for el in
-                               statuses[i * batch_count:(i + 1) * batch_count]]  # forelini%))))))
+                               statuses[i * batch_count:(i + 1) * batch_count]]
                 else:
                     for el in statuses:
                         yield self._form_message(el)
@@ -300,18 +298,21 @@ class __TTR_API(object):
 
     def get_retweets(self, tweet_id):
         params = {'id': tweet_id, 'trim_user': True, 'include_entities': True, 'count': 100}
-        response = self.__get_data(self.client.api.statuses.retweets.get, **params)
+        response = self.get(self.client.api.statuses.retweets.get, **params)
         retweets = response.data
         for el in retweets:
             yield self._form_message(el)
 
-
+import dateutil.parser as dtprsr
 class TTR_APIUser(APIUser):
-    def __init__(self, data_dict, created_at_format=None,):
+    def __init__(self, data_dict):
         data = dict(data_dict)
         data['source'] = 'ttr'
         data['sn_id'] = data.pop('id')
-        data['created_at'] = datetime.strptime(data['created_at'], '%a %b %d %H:%M:%S +0000 %Y')
+        data['created_at'] = dtprsr.parse(data['created_at'])
+
+        delete_fields_with_prefix(data,('_str'),l=False, r=True)
+
         super(TTR_APIUser, self).__init__(data)
 
 
@@ -329,15 +330,11 @@ class TTR_APIMessage(APIMessage):
         user = {'sn_id': data['user']['id']}
         data['user'] = user
         data['sn_id'] = data.pop('id')
+        data['created_at'] = dtprsr.parse(data['created_at'])
+
+        delete_fields_with_prefix(data,('_str'),l=False, r=True)
+
         super(TTR_APIMessage, self).__init__(data)
-
-
-api = __TTR_API()
-
-
-def get_api(api_name='ttr'):
-    if not api_name or api_name == 'ttr':
-        return api
 
 
 if __name__ == '__main__':
@@ -370,7 +367,7 @@ if __name__ == '__main__':
     # user2 = api.get_user(screen_name='@lutakisel4ikova')
     # rel_date = api.get_friendship_data(user1,user2)
 
-    api = __TTR_API()
+    api = TTR_API()
     # medved = api.get_user(screen_name = 'linoleum2k12')
     # followers,cursor = api.get_relation_ids(medved,relation_type='followers')
     user = api.get_user(screen_name='linoleum2k12')

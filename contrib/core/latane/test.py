@@ -1,4 +1,4 @@
-from contrib.api.ttr import __TTR_API
+from contrib.api.ttr import TTR_API
 from contrib.core.characteristics import TTR_Characterisitcs
 from contrib.core.latane.functions import LataneFunctions
 from contrib.db.database_engine import GraphPersistent, Persistent
@@ -7,7 +7,7 @@ __author__ = '4ikist'
 
 
 if __name__ == '__main__':
-    api = __TTR_API()
+    api = TTR_API()
     characteristics = TTR_Characterisitcs(Persistent(), api)
     graph_persistence = GraphPersistent(truncate=True)
     latane = LataneFunctions(characteristics, graph_persistence)

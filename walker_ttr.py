@@ -1,6 +1,6 @@
 # coding:utf-8
 import sys
-from contrib.api.ttr import get_api
+from contrib.api.ttr import TTR_API
 from contrib.db.database_engine import Persistent
 from properties import logger
 
@@ -17,7 +17,7 @@ relation_type = 'friends'
 start_user_screen_name = 'linoleum2k12'
 
 
-ttr = get_api('ttr')
+ttr = TTR_API()
 persist = Persistent()
 
 log = logger.getChild('walker_ttr')
@@ -43,15 +43,15 @@ def persist_messages(user_data):
 
 def persist_all_user_data_and_retrieve_friends_ids(screen_name, relation_type):
     log.info('start loading user: %s'%screen_name)
-    user_data = ttr.get_user_info(screen_name=screen_name)
-    persist.save_user(user_data)
-    persist_messages(user_data)
-    return get_user_relations(user_data, relation_type)
+    user = ttr.get_user(screen_name=screen_name)
+    persist.save_user(user)
+    persist_messages(user)
+    return get_user_relations(user, relation_type)
 
 
 def persist_users_by_ids_and_retrieve_friends(ids, relation_type):
     result = []
-    loaded, _ = ttr.get_users_info(ids)
+    loaded, _ = ttr.get_users(ids)
     if len(_):
         log.error('we have not loaded ids:\n%s'%', '.join(_))
     for user_data in set(loaded):
@@ -75,6 +75,7 @@ if __name__ == '__main__':
         start_user_name - some user name which will start walk from
         relation_type - can be [friends, followers], friends as default
         '''
+        sys.exit(-2)
 
     related_users_ids = persist_all_user_data_and_retrieve_friends_ids(start_user_screen_name, relation_type)
     while 1:

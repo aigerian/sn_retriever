@@ -8,7 +8,7 @@ import re
 
 from pymorphy2 import MorphAnalyzer
 
-from contrib.api.ttr import __TTR_API
+from contrib.api.ttr import TTR_API
 from contrib.utils import process_message
 
 log = logging.getLogger('main')
@@ -51,7 +51,7 @@ split_reg = re.compile(u'[^a-zA-Z0-9а-яёА-ЯЁ@#\*_-]+')
 
 
 if __name__ == '__main__':
-    ttr = __TTR_API()
+    ttr = TTR_API()
     result = [el['text'] for el in ttr.search(u'чеснок')]
     for el in result:
         log.info('[%s]' % el)

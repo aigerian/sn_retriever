@@ -6,7 +6,7 @@ import time
 from itertools import chain
 import html2text
 
-from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject
+from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject, delete_fields_with_prefix
 import re
 
 __author__ = '4ikist'
@@ -41,20 +41,6 @@ def _process_text_fields(data):
     for key in ['text', 'title', 'message', 'description', ]:
         if key in data and data.get(key) is not None:
             data[key] = html2text.html2text(data[key]).strip()
-
-
-def _delete_fields_with_prefix(data, prefixes, l=True, r=False):
-    to_replace = []
-    for k, v in data.iteritems():
-        if isinstance(k, (str, unicode)):
-            for prefix in prefixes:
-                if l and k.startswith(prefix):
-                    to_replace.append(k)
-                if r and k.endswith(prefix):
-                    to_replace.append(k)
-    for el in to_replace:
-        data.pop(el, None)
-
 
 class VK_APIUser(APIUser):
     def __init__(self, data_dict):
@@ -114,7 +100,7 @@ class VK_APISocialObject(APISocialObject):
     def __init__(self, data_dict):
         data_dict['sn_id'] = data_dict.pop('id')
         data_dict['closed'] = data_dict.pop('is_closed', False)
-        _delete_fields_with_prefix(data_dict, ('is_', 'photo_'), l=True, r=False)
+        delete_fields_with_prefix(data_dict, ('is_', 'photo_'), l=True, r=False)
         super(VK_APISocialObject, self).__init__(data_dict)
 
 
