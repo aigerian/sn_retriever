@@ -12,7 +12,7 @@ import properties
 
 __author__ = '4ikist'
 
-persist = Persistent(truncate=True)
+persist = Persistent(truncate=False)
 
 log = logger.getChild('walker_ttr')
 vk = VK_API_Execute()

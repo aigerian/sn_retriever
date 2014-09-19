@@ -151,22 +151,23 @@ def wall_retrieve(wall_elements):
                 if att_type in ('photo', 'posted_photo', 'video', 'note', 'album'):
                     wall_post['attachments'].append({'type': att_type, 'sn_id': attachment[att_type]['id']})
                     wall_post['text'] += "%s %s" % (
-                    attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
+                        attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
                 elif att_type == 'link':
                     wall_post['attachments'].append({'type': att_type, 'url': attachment[att_type]['link']})
                     wall_post['text'] += "%s %s" % (
-                    attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
+                        attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
                 elif att_type == 'page':
                     wall_post['attachments'].append({'type': att_type, 'group_id': attachment[att_type]['group_id'],
                                                      'page_id': attachment[att_type]['id']})
                     wall_post['text'] += "%s %s" % (
-                    attachment[att_type].get('title', ''), attachment[att_type].get('source', ''))
+                        attachment[att_type].get('title', ''), attachment[att_type].get('source', ''))
                 elif att_type == 'poll':
                     wall_post['attachments'].append({'type': att_type, 'poll_id': attachment[att_type]['id']})
                     wall_post['text'] += attachment[att_type].get('question', '')
                 elif att_type == 'doc':
                     wall_post['attachments'].append({'type': att_type, 'doc_id': attachment[att_type]['id']})
                     wall_post['text'] += attachment[att_type].get('title', '')
+            wall_post['text'] = wall_post['text'].strip()
         if 'copy_history' in wall_post_data:
             repost = wall_post_data['copy_history'][0]
             wall_post['repost_of'] = {'id': repost['id'], 'user_id': repost['owner_id'],
