@@ -47,19 +47,21 @@ class VK_APIUser(APIUser):
         data_dict['source'] = 'vk'
         data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id', None)
         if data_dict.get('bdate'):
-            bdate = data_dict.get('bdate')
+            bdate = data_dict.pop('bdate')
             if len(bdate) >= 6:
-                data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
-            if len(bdate) < 6 and len(bdate) > 2:
-                data_dict['bdate'] = datetime.datetime.strptime(bdate, '%d.%m')
+                data_dict['birthday'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
+            elif len(bdate) < 6 and len(bdate) > 2:
+                data_dict['birthday'] = datetime.datetime.strptime(bdate, '%d.%m')
+
         if data_dict.get('last_seen'):
             data_dict['last_visit'] = unix_time(data_dict['last_seen']['time'])
+            data_dict.pop('last_seen')
         if data_dict.get('counters'):
             counters = data_dict.get('counters')
             data_dict['followers_count'] = counters['followers']
             data_dict['friends_count'] = counters['friends']
         if 'screen_name' not in data_dict:
-            data_dict['screen_name'] = data_dict.pop('domain', None) or data_dict.get('sn_id')
+            data_dict['screen_name'] = data_dict.get('screen_name') or data_dict.pop('domain', None) or data_dict.get('sn_id')
         data_dict['name'] = data_dict['first_name'] + ' ' + data_dict['last_name']
         super(VK_APIUser, self).__init__(data_dict)
 

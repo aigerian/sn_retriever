@@ -365,32 +365,7 @@ class VK_API_Execute(VK_API):
         return content_result
 
 
-def test_asc(acc):
-    for i, el in enumerate(acc):
-        if i > 0 or i < len(acc) - 1:
-            if not (acc[i - 1]['date'] >= el['date'] and el['date'] >= acc[i + 1]['date']):
-                return (acc[i - 1], acc[i], acc[i + 1])
-
-
 if __name__ == '__main__':
     vk = VK_API_Execute()
-    photos = vk.get_photos_data('266544674')
-    photo = photos.content[0]
-    photo_comments = vk.get_photos_comments_data('266544674')
-    photo_comment = photo_comments.comments[0]
-
-    videos = vk.get_videos_data('266544674')
-    video = videos.content[0]
-    video_comments = vk.get_comments_data('266544674', 'video', video['video_id'])
-    video_comment = video_comments.comments[0]
-
-    wall = vk.get_wall_data('266544674')
-    wall_post = wall.content[0]
-    wall_comments = vk.get_comments_data('266544674', 'wall', wall_post['wall_post_id'])
-    wall_comment = wall_comments.comments[0]
-
-    wall_comment_likers = vk.get_likers('266544674', wall_comment['comment_id'], 'comment', )
-    photo_comment_likers = vk.get_likers('266544674', photo_comment['comment_id'], 'photo_comment', )
-    video_comment_likers = vk.get_likers('266544674', video_comment['comment_id'], 'video_comment', )
-
+    user = vk.get_user_info('from_to_where')
     print 'fooo'

@@ -153,7 +153,7 @@ def wall_retrieve(wall_elements):
                     wall_post['text'] += "%s %s" % (
                         attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
                 elif att_type == 'link':
-                    wall_post['attachments'].append({'type': att_type, 'url': attachment[att_type]['link']})
+                    wall_post['attachments'].append({'type': att_type, 'url': attachment[att_type]['url']})
                     wall_post['text'] += "%s %s" % (
                         attachment[att_type].get('title', ''), attachment[att_type].get('description', ''))
                 elif att_type == 'page':
