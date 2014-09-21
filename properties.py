@@ -180,6 +180,7 @@ db_password = 'sederfes'
 redis_host = '127.0.0.1'
 redis_port = 6379
 redis_batch_size = 185000
+redis_cache_time = 3600
 
 #dictionaries for pymorphy
 dicts_path = os.path.join(os.path.dirname(__file__), 'dicts', 'ru', 'morphs.pickle')

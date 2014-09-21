@@ -139,7 +139,8 @@ class VK_API(API):
                 result_object = json.loads(result.content)
             except Exception as e:
                 change_token(e)
-                continue
+                self.log.error("some error with result %s" % result)
+                return None
             if 'error' in result_object:
                 if result_object['error']['error_code'] == 6:
                     # if many request per second
@@ -288,6 +289,9 @@ class VK_API(API):
         contentResult.add_relations(self.check_members(commentators, group_id))
         return contentResult
 
+    def get_groups_info(self, group_ids):
+        return self.get_users_info(group_ids,credentials={'commend':'groups.getById', 'ids_name':'group_ids', 'fields_value':properties.vk_group_fields}, reformer=APISocialObject)
+
     def get_group_data(self, group_id):
         """
         Вовращает данные находящиеся в группе
@@ -408,8 +412,7 @@ class VK_API(API):
         user = VK_APIUser(result[0])
         return user
 
-    def get_users_info(self, uids):
-        # TODO update algorithm!
+    def get_users_info(self, uids, credentials=None, reformer=VK_APIUser):
         """
         retrieving all users
         :param uids:
@@ -417,7 +420,9 @@ class VK_API(API):
         """
         if len(uids) == 0:
             return []
-        command = 'users.get'
+        if credentials is None:
+            credentials = {'command': 'users.get', 'ids_name': 'user_ids', 'fields_value': properties.vk_user_fields}
+        command = credentials['command']
         count_batch = 300
         loaded_users = []
         while 1:
@@ -425,22 +430,22 @@ class VK_API(API):
             try:
                 for i in xrange((len(uids[len(loaded_users):]) / count_batch) + 1):
                     batch = uids[i * count_batch:(i + 1) * count_batch]
-                    kwargs = {'user_ids': ', '.join([str(el) for el in batch]),
-                              'fields': properties.vk_user_fields}
+                    kwargs = {credentials['ids_name']: ', '.join([str(el) for el in batch]),
+                              'fields': credentials['fields_value']}
 
                     result = self.get(command, **kwargs)
                     for el in result:
-                        users.append(VK_APIUser(el))
+                        users.append(reformer(el))
                     loaded_users.extend(users)
             except APIResponseException as e:
                 self.log.warn(
-                    "can not load batch of users with batch len %s, trying with %s" % (count_batch, count_batch - 50))
+                    "can not load batch with len %s, trying with %s" % (count_batch, count_batch - 50))
                 if count_batch > 50:
                     count_batch -= 50
                     continue
                 else:
-                    self.log.warn("something bad... i can not load batch of this users :( only %s of %s" % (
-                    len(loaded_users), len(uids)))
+                    self.log.warn("something bad... i can not load batch of this objects :( only %s of %s" % (
+                        len(loaded_users), len(uids)))
 
             return loaded_users
 

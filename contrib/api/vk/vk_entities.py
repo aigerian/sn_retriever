@@ -6,7 +6,8 @@ import time
 from itertools import chain
 import html2text
 
-from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject, delete_fields_with_prefix
+from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject, delete_fields_with_prefix, \
+    APIException
 import re
 
 __author__ = '4ikist'
@@ -44,6 +45,8 @@ def _process_text_fields(data):
 
 class VK_APIUser(APIUser):
     def __init__(self, data_dict):
+        if data_dict is None:
+            raise APIException('bad user data!')
         data_dict['source'] = 'vk'
         data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id', None)
         if data_dict.get('bdate'):

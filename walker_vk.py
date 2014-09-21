@@ -12,22 +12,17 @@ import properties
 
 __author__ = '4ikist'
 
-persist = Persistent(truncate=False)
+persist = Persistent(truncate=__debug__)
 
 log = logger.getChild('walker_ttr')
 vk = VK_API_Execute()
 
 
 def persist_all_user_data_and_retrieve_related(user_id):
-    saved_user = persist.get_user(sn_id=user_id)
-    # Если пользователь уже сохранен и его данные сохранены недавно то возвращаем его пользовательские
-    if saved_user and 'data_load_at' in saved_user and (
-                datetime.now() - saved_user['data_load_at']).total_seconds() < properties.update_iteration_time:
-        log.info('user %s was load but date of load data is so far' % saved_user.screen_name)
-        related_users = [persist.get_related_users(saved_user.sn_id, relation_type=el, only_sn_ids=True) for el in
-                         rel_types_users]
-        return reduce(lambda x, y: x+y, related_users, [])
 
+    saved_user = persist.get_user(sn_id=user_id)
+    # Если пользователь уже сохранен и его данные сохранены недавно то возвращаем его пользовательские связи которые не были сохранены
+    if saved_user: return [el for el in persist.get_related_users(user_id,rel_types_users, only_sn_ids=True) if persist.is_user_data_loaded(el)]
     user, result_object = vk.get_user_data(user_id)
     log.info("user [%s (%s)] data was retrieved, saving..." % (user.screen_name, user.name))
     persist.save_user(user)
@@ -50,6 +45,8 @@ if __name__ == '__main__':
             log.info("Retrieving data for user %s" % user_id)
             new_related_users.extend(persist_all_user_data_and_retrieve_related(user_id))
         related_users = list(set(new_related_users))
+        if len(related_users)==0:
+            break
 
 
 

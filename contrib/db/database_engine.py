@@ -1,9 +1,10 @@
 # coding: utf-8
 
-from datetime import datetime
+from datetime import datetime, time
 import json
 from bson import DBRef
 from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject
+import properties
 from pymongo import MongoClient, ASCENDING
 
 import networkx as nx
@@ -260,6 +261,27 @@ class RedisBaseMixin(object):
         self.engine.lpop(list_name)
 
 
+class RedisCacheMixin(object):
+    def __init__(self, truncate):
+        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
+        if truncate:
+            self.engine.flushdb()
+
+    def add_to_cache(self, key, value):
+        self.engine.set(key, value, ex=properties.redis_cache_time)
+
+    def get_from_cache(self, key, renderer=json.loads):
+        if isinstance(key,list):
+            list_of_values = self.engine.mget(key)
+            return [renderer(el) for el in list_of_values if el is not None]
+        else:
+            value = self.engine.get(key)
+            return renderer(value)
+
+    def change_state(self, key, by=1):
+        self.engine.incrby(key,by)
+
+
 class Persistent(object):
     def __create_index(self, collection, field_or_list, direction, unique, **index_kwargs):
         index_info = collection.index_information()
@@ -329,6 +351,8 @@ class Persistent(object):
 
         self.redis = RedisBaseMixin(truncate)
 
+        self.cache = RedisCacheMixin(truncate=True)
+
         if truncate:
             self.users.remove()
             self.messages.remove()
@@ -337,6 +361,7 @@ class Persistent(object):
             self.relations_metadata.remove()
             self.changes.remove()
             self.deleted_users.remove()
+
 
     def add_deleted_user(self, user_sn_id):
         found = self.deleted_users.find_one({'sn_id': user_sn_id})
@@ -414,9 +439,21 @@ class Persistent(object):
             return True
         return False
 
-    def is_loaded(self, user_sn_id):
-        if self.users.find_one({'sn_id': user_sn_id}):
-            return True
+    def is_user_data_loaded(self, user_sn_id):
+        """
+        Возвратит время загрузки данных либо True если есть только пользовательские данные
+        :param user_sn_id:
+        :return:
+        """
+        cache = self.cache.get_from_cache(user_sn_id, float)
+        if cache is not None:
+            if cache > 1:
+                return datetime.fromtimestamp(cache)
+            if cache == 1:
+                return True
+        stored = self.users.find_one({'sn_id': user_sn_id})
+        if stored:
+            return stored.get('data_load_at', True)
         return False
 
     def save_user(self, user):
@@ -427,6 +464,8 @@ class Persistent(object):
         result = self._save_or_update_object(self.users, user['sn_id'], user)
         self.not_loaded_users.remove({'_id': user.get('sn_id')})
         user['_id'] = result
+        #сохраним в кэш. так что если его днные загруженны, то в кэше будет хранится дата загрузки его данных
+        self.cache.add_to_cache(user['sn_id'],  time.mktime(user['data_load_at'].timetuple()) if 'data_load_at' in user else 1)
         return result
 
     def get_messages_by_text(self, text, limit=100, score_more_than=1):
@@ -482,7 +521,14 @@ class Persistent(object):
 
     def save_social_object(self, s_object):
         result = self._save_or_update_object(self.social_objects, s_object['sn_id'], s_object)
+        self.cache.add_to_cache(s_object['sn_id'], 1)
         return result
+
+    def is_social_object_saved(self, s_object_sn_id):
+        cache = self.cache.get_from_cache(s_object_sn_id)
+        if cache == 1:
+            return True
+        return self.social_objects.find({'sn_id':s_object_sn_id})
 
     def save_content_object(self, s_object):
         self.__form_user_ref(s_object)
@@ -530,7 +576,12 @@ class Persistent(object):
         :param result_key - key of user if None - user object
         :returns related users which related from or to or some user's element (retrieve by param: result_key)
         """
-        refs = self.redis.get_relations(from_id, relation_type)
+        if isinstance(relation_type, list):
+            refs = []
+            for relation_type_element in relation_type:
+                refs.extend(self.redis.get_relations(from_id, relation_type_element))
+        else:
+            refs = self.redis.get_relations(from_id, relation_type)
         result = []
         for el in refs:
             if only_sn_ids:
@@ -577,13 +628,13 @@ class Persistent(object):
         assert sn_id is not None
         object_data['update_date'] = datetime.now()
         log.debug('saving object: [%s]\n%s' % (object_data.get('screen_name') or sn_id, object_data))
-        founded_user = sn_object.find_one({'sn_id': sn_id})
-        if founded_user:
+        founded_object = sn_object.find_one({'sn_id': sn_id})
+        if founded_object:
             # founded_user = dict(founded_user)
             # founded_user.update(object_data)
-            founded_user.update(object_data)
-            sn_object.save(founded_user)
-            result = founded_user.get('_id')
+            founded_object.update(object_data)
+            sn_object.save(founded_object)
+            result = founded_object.get('_id')
         else:
             result = sn_object.save(object_data)
         return result
