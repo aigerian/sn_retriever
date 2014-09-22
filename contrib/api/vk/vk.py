@@ -1,20 +1,18 @@
 # coding=utf-8
-from collections import defaultdict
-from functools import partial
-from itertools import chain
+import json
 from contrib.api.entities import API, APIException, APISocialObject, APIResponseException
-from contrib.api.vk.utils import group_retrieve
+from contrib.api.vk.utils import group_retrieve, Singleton
 from contrib.api.vk.vk_entities import VK_APIUser, rel_types_groups, ContentResult, VK_APIMessage, unix_time, \
     VK_APIContentObject, get_mentioned, VK_APISocialObject
 import properties
+from requests.packages.urllib3.exceptions import TimeoutError
 
 __author__ = '4ikist'
 
 import datetime
 import random
 from time import sleep
-import json
-import re
+
 import urlparse
 from lxml import html
 import requests
@@ -29,10 +27,15 @@ error_codes = {180: 'note not found'}
 
 
 class AccessTokenHolder(object):
-    def __init__(self):
+    def __init__(self, logins=None):
+        """
+        logins must be like vk_logins at properties
+        :param logins:
+        :return:
+        """
         self.log = properties.logger.getChild('VK_API_token_holder')
         self.tokens = {}
-        for el in properties.vk_logins.itervalues():
+        for el in logins.itervalues() if logins else properties.vk_logins.itervalues():
             token = self.__auth(el)
             self.tokens[token['access_token']] = token
         self.current_login = None
@@ -115,11 +118,15 @@ class AccessTokenHolder(object):
 
 
 class VK_API(API):
-    def __init__(self):
+    # __metaclass__ = Singleton
+
+    def __init__(self, logins=None, no_auth=False, base_url='',):
         self.log = properties.logger.getChild('VK_API')
-        self.token_holder = AccessTokenHolder()
-        self.access_token = self.token_holder.get_token()
-        self.base_url = 'https://api.vk.com/method/'
+        if no_auth:
+            self.token_holder = AccessTokenHolder(logins=logins)
+            self.access_token = self.token_holder.get_token()
+            self.base_url = 'https://api.vk.com/method/'
+        self.base_url = base_url
         self.array_item_process = lambda x: x[1:]
         self.array_count_process = lambda x: x[0]
 
@@ -133,7 +140,12 @@ class VK_API(API):
         change_token_succession = 0
         while 1:
             params = dict({'access_token': self.access_token, 'v': properties.vk_api_version}, **kwargs)
-            result = requests.get('%s%s' % (self.base_url, method_name), params=params)
+            try:
+                result = requests.get('%s%s' % (self.base_url, method_name), params=params, timeout=5)
+            except TimeoutError as e:
+                change_token(e)
+                change_token_succession+=1
+                continue
             if result.status_code != 200:
                 raise APIResponseException("could not load because: %s" % result.reason)
             try:
@@ -411,15 +423,23 @@ class VK_API(API):
         while 1:
             users = []
             try:
-                for i in xrange((len(uids[len(loaded_users):]) / count_batch) + 1):
-                    batch = uids[i * count_batch:(i + 1) * count_batch]
+                skipped = len(loaded_users)
+                for i in xrange((len(uids) / count_batch) + 1):
+                    batch = uids[skipped:][i * count_batch:(i + 1) * count_batch]
+                    if len(batch) == 0:
+                        self.log.info('batch is 0')
+                        break
                     kwargs = {credentials['ids_name']: ', '.join([str(el) for el in batch]),
                               'fields': credentials['fields_value']}
-
                     result = self.get(command, **kwargs)
+                    if result is None:
+                        raise APIResponseException
                     for el in result:
-                        users.append(reformer(el))
-                    loaded_users.extend(users)
+                        object = reformer(el)
+                        users.append(object)
+                        loaded_users.append(object)
+                return users
+
             except APIResponseException as e:
                 self.log.warn(
                     "can not load batch with len %s, trying with %s" % (count_batch, count_batch - 50))
@@ -429,8 +449,9 @@ class VK_API(API):
                 else:
                     self.log.warn("something bad... i can not load batch of this objects :( only %s of %s" % (
                         len(loaded_users), len(uids)))
+                    break
 
-            return loaded_users
+        return loaded_users
 
     def _fill_comment_likers(self, comment, comment_type='comment'):
         """

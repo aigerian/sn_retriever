@@ -16,6 +16,9 @@ rand_str = lambda cnt: ''.join([str(random.choice(string.ascii_letters)) for el 
 
 
 class FakeVK(VK_API_Execute):
+    def __init__(self):
+        super(FakeVK, self).__init__(logins={})
+
     def get_groups_info(self, group_ids):
         return [APISocialObject({'sn_id': random.randint(0, 1000)}) for el in xrange(10)]
 
@@ -59,6 +62,9 @@ def persist_content_result(content_result, user_id, persist, vk):
 
     def add_new_user(new_user_id):
         if new_user_id != user_id:
+            if isinstance(new_user_id, dict):
+                print 'how? %s'%new_user_id
+                return
             is_loaded = persist.is_user_data_loaded(new_user_id)
             if isinstance(is_loaded, datetime):
                 return
@@ -84,11 +90,13 @@ def persist_content_result(content_result, user_id, persist, vk):
     log.info("found %s related and not loaded groups" % len(not_loaded_groups))
     log.info("will load....")
     groups = vk.get_groups_info(not_loaded_groups)
+    log.info('load %s groups info'%len(groups))
     persist.save_object_batch(groups)
-
+    log.info('groups saved')
     users = vk.get_users_info(not_loaded_users)
     log.info('load %s users info' % len(users))
     persist.save_object_batch(users)
-
+    log.info('users saved')
     persist.save_object_batch(content_result.get_content_to_persist())
+    log.info('content objects saved')
     return not_data_loaded_users + not_loaded_users

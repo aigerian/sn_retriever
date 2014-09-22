@@ -5,6 +5,7 @@ import time
 from birdy.twitter import UserClient, BirdyException, TwitterApiError, TwitterClientError
 from contrib.api.entities import APIUser, APIMessage, delete_fields_with_prefix
 from contrib.api.proxy import ProxyHandler
+from contrib.api.vk.utils import Singleton
 import properties
 
 max_apps_count = len(properties.ttr_access_tokens) + 1
@@ -78,6 +79,8 @@ class TTRLimitHandler(object):
 
 
 class TTR_API(object):
+    __metaclass__ = Singleton
+
     def __init__(self):
         self.credential_number = 1
         self.proxy_handler = ProxyHandler()
@@ -135,9 +138,9 @@ class TTR_API(object):
 
     def get_relation_ids(self, user, relation_type='friends', from_cursor=-1):
         response = self.get(self.client.api[relation_type].ids.get,
-                                   user_id=user.get('sn_id'),
-                                   count=5000,
-                                   cursor=from_cursor)
+                            user_id=user.get('sn_id'),
+                            count=5000,
+                            cursor=from_cursor)
         if response:
             return response.data.ids, response.data.next_cursor
 
@@ -145,11 +148,11 @@ class TTR_API(object):
         cursor = from_cursor
         while True:
             response = self.get(self.client.api[relation_type].list.get,
-                                       user_id=user['sn_id'],
-                                       count=200,
-                                       cursor=cursor,
-                                       skip_status=False,
-                                       include_entites=True)
+                                user_id=user['sn_id'],
+                                count=200,
+                                cursor=cursor,
+                                skip_status=False,
+                                include_entites=True)
             if response:
                 cursor = response.data.next_cursor
                 for el in response.data.users:
@@ -243,12 +246,12 @@ class TTR_API(object):
         max_id = max_id
         while True:
             response = self.get(self.client.api.statuses.user_timeline.get,
-                                       user_id=user.get('sn_id'),
-                                       count=200,
-                                       trim_user=True,
-                                       include_rts=True,
-                                       max_id=max_id,
-                                       since_id=since_id)
+                                user_id=user.get('sn_id'),
+                                count=200,
+                                trim_user=True,
+                                include_rts=True,
+                                max_id=max_id,
+                                since_id=since_id)
             if response:
                 for el in response.data:
                     yield self._form_message(el)
@@ -303,7 +306,10 @@ class TTR_API(object):
         for el in retweets:
             yield self._form_message(el)
 
+
 import dateutil.parser as dtprsr
+
+
 class TTR_APIUser(APIUser):
     def __init__(self, data_dict):
         data = dict(data_dict)
@@ -311,7 +317,7 @@ class TTR_APIUser(APIUser):
         data['sn_id'] = data.pop('id')
         data['created_at'] = dtprsr.parse(data['created_at'])
 
-        delete_fields_with_prefix(data,('_str'),l=False, r=True)
+        delete_fields_with_prefix(data, ('_str'), l=False, r=True)
 
         super(TTR_APIUser, self).__init__(data)
 
@@ -332,7 +338,7 @@ class TTR_APIMessage(APIMessage):
         data['sn_id'] = data.pop('id')
         data['created_at'] = dtprsr.parse(data['created_at'])
 
-        delete_fields_with_prefix(data,('_str'),l=False, r=True)
+        delete_fields_with_prefix(data, ('_str'), l=False, r=True)
 
         super(TTR_APIMessage, self).__init__(data)
 
@@ -352,7 +358,7 @@ if __name__ == '__main__':
     #
     # def found_user(user_ids, api, db):
     # for user_ids_batch, cursor in user_ids:
-    #         for user_id in user_ids_batch:
+    # for user_id in user_ids_batch:
     #             user = api.get_user(user_id=str(user_id))
     #             if user:
     #                 db.save_user(user)

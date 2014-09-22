@@ -212,9 +212,9 @@ class RedisBaseMixin(object):
     def form_relations_list_name(self, from_, type_):
         return '%s:%s' % (from_, type_)
 
-    def form_relations_list_out_name(self, from_,type_):
-        if isinstance(from_,list):
-            return [self.form_relations_list_name(el,type_) for el in from_]
+    def form_relations_list_out_name(self, from_, type_):
+        if isinstance(from_, list):
+            return [self.form_relations_list_name(el, type_) for el in from_]
         return '<%s:%s' % (from_, type_)
 
     def form_path_list_name(self, from_, to_):
@@ -222,7 +222,7 @@ class RedisBaseMixin(object):
 
     def save_relations(self, from_, to_, rel_type):
         list_name = self.form_relations_list_name(from_, rel_type)
-        list_out_name = self.form_relations_list_out_name(to_,rel_type)
+        list_out_name = self.form_relations_list_out_name(to_, rel_type)
         if isinstance(to_, list):
             for i in xrange((len(to_) / redis_batch_size) + 1):
                 log.debug("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
@@ -239,16 +239,16 @@ class RedisBaseMixin(object):
     def get_relations(self, from_, rel_type, backwards=True):
         out_result = []
         if backwards:
-            out_result = self.engine.lrange(self.form_relations_list_out_name(from_,rel_type),0,-1)
+            out_result = self.engine.lrange(self.form_relations_list_out_name(from_, rel_type), 0, -1)
         return self.engine.lrange(self.form_relations_list_name(from_, rel_type), 0, -1) + out_result
 
-    def get_count(self, from_, rel_type, backwards = True):
+    def get_count(self, from_, rel_type, backwards=True):
         out_result = 0
         if backwards:
             out_result = self.engine.llen(self.form_relations_list_name(from_, rel_type))
         return self.engine.llen(self.form_relations_list_name(from_, rel_type)) + out_result
 
-    #todo think about backwards or govnokode or good idea/
+    # todo think about backwards or govnokode or good idea/
     def get_relations_and_remove(self, from_, rel_type):
         list_name = self.form_relations_list_name(from_, rel_type)
         result = self.engine.lrange(list_name, 0, -1)
@@ -288,7 +288,7 @@ class RedisCacheMixin(object):
         self.engine.set(key, value, ex=properties.redis_cache_time)
 
     def get_from_cache(self, key, renderer=json.loads):
-        if isinstance(key,list):
+        if isinstance(key, list):
             list_of_values = self.engine.mget(key)
             return [renderer(el) for el in list_of_values if el is not None]
         else:
@@ -296,7 +296,7 @@ class RedisCacheMixin(object):
             return renderer(value) if value else None
 
     def change_state(self, key, by=1):
-        self.engine.incrby(key,by)
+        self.engine.incrby(key, by)
 
 
 class Persistent(object):
@@ -310,12 +310,13 @@ class Persistent(object):
             index_param = [(field_or_list, direction)]
 
         if index_name in index_info:
+            log.info('%s index is ensured!'%index_name)
             return
         else:
             collection.ensure_index(index_param, unique=unique, **index_kwargs)
 
     def __init__(self, truncate=False):
-        log.info("Start persistence engine with truncate:%s"%truncate)
+        log.info("Start persistence engine with truncate:%s" % truncate)
         mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (db_user, db_password, db_host, db_port, db_name)
         try:
             self.engine = MongoClient(mongo_uri)
@@ -482,8 +483,9 @@ class Persistent(object):
         result = self._save_or_update_object(self.users, user['sn_id'], user)
         self.not_loaded_users.remove({'_id': user.get('sn_id')})
         user['_id'] = result
-        #сохраним в кэш. так что если его днные загруженны, то в кэше будет хранится дата загрузки его данных
-        self.cache.add_to_cache(user['sn_id'],  time.mktime(user['data_load_at'].timetuple()) if 'data_load_at' in user else 1)
+        # сохраним в кэш. так что если его днные загруженны, то в кэше будет хранится дата загрузки его данных
+        self.cache.add_to_cache(user['sn_id'],
+                                time.mktime(user['data_load_at'].timetuple()) if 'data_load_at' in user else 1)
         return result
 
     def get_messages_by_text(self, text, limit=100, score_more_than=1):
@@ -546,7 +548,7 @@ class Persistent(object):
         cache = self.cache.get_from_cache(s_object_sn_id)
         if cache == 1:
             return True
-        return self.social_objects.find_one({'sn_id':s_object_sn_id})
+        return self.social_objects.find_one({'sn_id': s_object_sn_id})
 
     def save_content_object(self, s_object):
         self.__form_user_ref(s_object)
@@ -580,10 +582,11 @@ class Persistent(object):
                 self.not_loaded_users.save({'_id': el})
 
     def save_relation(self, from_id, to_id, relation_type):
+        # log.info("save relation [%s] -> [%s] -> [%s]" % (from_id, relation_type, to_id))
         list_name, list_out_name = self.redis.save_relations(from_id, to_id, relation_type)
 
         # if isinstance(list_out_name,list):
-        #     [self.update_relations_metadata(el) for el in list_out_name]
+        # [self.update_relations_metadata(el) for el in list_out_name]
         # else:
         #     self.update_relations_metadata(list_out_name)
         # self.update_relations_metadata(list_name)
@@ -610,7 +613,7 @@ class Persistent(object):
         if isinstance(relation_type, list):
             refs = []
             for relation_type_element in relation_type:
-                refs.extend(self.redis.get_relations(from_id, relation_type_element,backwards=backwards))
+                refs.extend(self.redis.get_relations(from_id, relation_type_element, backwards=backwards))
         else:
             refs = self.redis.get_relations(from_id, relation_type)
         result = []

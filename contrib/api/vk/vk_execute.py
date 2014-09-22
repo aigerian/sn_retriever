@@ -1,5 +1,6 @@
 # coding=utf-8
 from datetime import datetime
+from contrib.api.entities import APIUser
 
 from contrib.api.vk.utils import photo_retrieve, photo_comments_retrieve, video_retrieve, wall_retrieve, note_retrieve, \
     group_retrieve, subscriptions_retrieve, comments_retrieve
@@ -51,8 +52,8 @@ class ContentResultIntelligentRelations(ContentResult):
 
 
 class VK_API_Execute(VK_API):
-    def __init__(self):
-        super(VK_API_Execute, self).__init__()
+    def __init__(self, logins=None):
+        super(VK_API_Execute, self).__init__(logins=logins)
         self.names = {'photos': self.get_photos_data,
                       'videos': self.get_videos_data,
                       'photo_comments': self.get_photos_comments_data,
@@ -94,6 +95,7 @@ class VK_API_Execute(VK_API):
         :return:
         """
         user_data = self.get('execute.userData', **{'user_id': user_id})
+
         def fill_count(count_name):
             counter = user_data.get(count_name)
             if counter and len(counter):
@@ -113,7 +115,7 @@ class VK_API_Execute(VK_API):
         content_result.add_relations([(user.sn_id, 'friend', el) for el in fill_count('friends')])
 
         # его подписки (то что он читает)
-        subscription_result = subscriptions_retrieve(fill_count('subscriptions'), user)
+        subscription_result = subscriptions_retrieve(fill_count('subscriptions'), user.sn_id)
         # его фотографии и комментарии к ним
         photo_result = photo_retrieve(fill_count('photos'))
         photo_comment_result = photo_comments_retrieve(fill_count('photo_comments'),user.sn_id)
@@ -365,8 +367,3 @@ class VK_API_Execute(VK_API):
         content_result += wall_retrieve(wall_acc)
         return content_result
 
-
-if __name__ == '__main__':
-    vk = VK_API_Execute()
-    user = vk.get_user_info('from_to_where')
-    print 'fooo'
