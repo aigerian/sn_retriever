@@ -51,10 +51,15 @@ class VK_APIUser(APIUser):
         data_dict['sn_id'] = data_dict.pop('uid', None) or data_dict.pop('id', None)
         if data_dict.get('bdate'):
             bdate = data_dict.pop('bdate')
-            if len(bdate) >= 6:
+            len_bdate = len(bdate)
+            if len_bdate >= 6:
                 data_dict['birthday'] = datetime.datetime.strptime(bdate, '%d.%m.%Y')
-            elif len(bdate) < 6 and len(bdate) > 2:
-                data_dict['birthday'] = datetime.datetime.strptime(bdate, '%d.%m')
+            elif len_bdate < 6 and len_bdate > 2:
+                try:
+                    data_dict['birthday'] = datetime.datetime.strptime(bdate, '%d.%m')
+                except ValueError as e:
+                    print bdate
+
 
         if data_dict.get('last_seen'):
             data_dict['last_visit'] = unix_time(data_dict['last_seen']['time'])
@@ -179,6 +184,9 @@ class ContentResult(object):
                 for to_id in to:
                     result_acc.append((from_, type, to_id))
         return result_acc
+
+    def get_relations(self):
+        return self._relations
 
     @property
     def comments(self):

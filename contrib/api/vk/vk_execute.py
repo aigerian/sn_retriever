@@ -94,12 +94,6 @@ class VK_API_Execute(VK_API):
         :return:
         """
         user_data = self.get('execute.userData', **{'user_id': user_id})
-        user = VK_APIUser(user_data['user'])
-        content_result = ContentResultIntelligentRelations(user.sn_id)
-        # связи пользователя
-        content_result.add_relations([(el, 'follower', user.sn_id) for el in user_data['followers']['items']])
-        content_result.add_relations([(user.sn_id, 'friend', el) for el in user_data['friends']['items']])
-
         def fill_count(count_name):
             counter = user_data.get(count_name)
             if counter and len(counter):
@@ -110,6 +104,13 @@ class VK_API_Execute(VK_API):
                     user['%s_count' % count_name] = counter[0]
                     return counter[1:]
             return []
+
+
+        user = VK_APIUser(user_data['user'])
+        content_result = ContentResultIntelligentRelations(user.sn_id)
+        # связи пользователя
+        content_result.add_relations([(el, 'follower', user.sn_id) for el in fill_count('followers')])
+        content_result.add_relations([(user.sn_id, 'friend', el) for el in fill_count('friends')])
 
         # его подписки (то что он читает)
         subscription_result = subscriptions_retrieve(fill_count('subscriptions'), user)
@@ -123,7 +124,7 @@ class VK_API_Execute(VK_API):
         # его записки
         note_result = note_retrieve(fill_count('notes'))
         # его групы
-        group_content_result = group_retrieve(fill_count('groups'), user)
+        group_content_result = group_retrieve(fill_count('groups'), user.sn_id)
         content_result.e_i(
             group_content_result + subscription_result + photo_comment_result + photo_result + video_result + wall_result + note_result)
 

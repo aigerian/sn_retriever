@@ -1,6 +1,7 @@
 # coding: utf-8
 
-from datetime import datetime, time
+from datetime import datetime
+import time
 import json
 from bson import DBRef
 from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject
@@ -211,27 +212,43 @@ class RedisBaseMixin(object):
     def form_relations_list_name(self, from_, type_):
         return '%s:%s' % (from_, type_)
 
+    def form_relations_list_out_name(self, from_,type_):
+        if isinstance(from_,list):
+            return [self.form_relations_list_name(el,type_) for el in from_]
+        return '<%s:%s' % (from_, type_)
+
     def form_path_list_name(self, from_, to_):
         return self.form_relations_list_name(from_, to_)
 
     def save_relations(self, from_, to_, rel_type):
         list_name = self.form_relations_list_name(from_, rel_type)
+        list_out_name = self.form_relations_list_out_name(to_,rel_type)
         if isinstance(to_, list):
             for i in xrange((len(to_) / redis_batch_size) + 1):
                 log.debug("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
                 self.engine.rpush(list_name,
                                   *to_[i * redis_batch_size:(i + 1) * redis_batch_size])
+                for el in list_out_name:
+                    self.engine.rpush(el, from_)
         else:
             self.engine.rpush(list_name, to_)
-        return list_name
+            self.engine.rpush(list_out_name, from_)
+        return list_name, list_out_name
 
 
-    def get_relations(self, from_, rel_type):
-        return self.engine.lrange(self.form_relations_list_name(from_, rel_type), 0, -1)
+    def get_relations(self, from_, rel_type, backwards=True):
+        out_result = []
+        if backwards:
+            out_result = self.engine.lrange(self.form_relations_list_out_name(from_,rel_type),0,-1)
+        return self.engine.lrange(self.form_relations_list_name(from_, rel_type), 0, -1) + out_result
 
-    def get_count(self, from_, rel_type):
-        return self.engine.llen(self.form_relations_list_name(from_, rel_type))
+    def get_count(self, from_, rel_type, backwards = True):
+        out_result = 0
+        if backwards:
+            out_result = self.engine.llen(self.form_relations_list_name(from_, rel_type))
+        return self.engine.llen(self.form_relations_list_name(from_, rel_type)) + out_result
 
+    #todo think about backwards or govnokode or good idea/
     def get_relations_and_remove(self, from_, rel_type):
         list_name = self.form_relations_list_name(from_, rel_type)
         result = self.engine.lrange(list_name, 0, -1)
@@ -276,7 +293,7 @@ class RedisCacheMixin(object):
             return [renderer(el) for el in list_of_values if el is not None]
         else:
             value = self.engine.get(key)
-            return renderer(value)
+            return renderer(value) if value else None
 
     def change_state(self, key, by=1):
         self.engine.incrby(key,by)
@@ -298,6 +315,7 @@ class Persistent(object):
             collection.ensure_index(index_param, unique=unique, **index_kwargs)
 
     def __init__(self, truncate=False):
+        log.info("Start persistence engine with truncate:%s"%truncate)
         mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (db_user, db_password, db_host, db_port, db_name)
         try:
             self.engine = MongoClient(mongo_uri)
@@ -431,9 +449,9 @@ class Persistent(object):
             return APIUser(user)
 
     def is_not_loaded(self, user_sn_id):
-        result = self.not_loaded_users.find_one({'_id': user_sn_id})
-        if result:
-            return True
+        cache_objct = self.cache.get_from_cache(user_sn_id, float)
+        if cache_objct:
+            return False
         result = self.users.find_one({'sn_id': user_sn_id})
         if not result:
             return True
@@ -441,7 +459,7 @@ class Persistent(object):
 
     def is_user_data_loaded(self, user_sn_id):
         """
-        Возвратит время загрузки данных либо True если есть только пользовательские данные
+        Возвратит время загрузки данных либо 'not_data_load' если есть только пользовательские данные
         :param user_sn_id:
         :return:
         """
@@ -450,10 +468,10 @@ class Persistent(object):
             if cache > 1:
                 return datetime.fromtimestamp(cache)
             if cache == 1:
-                return True
+                return 'not_data_load'
         stored = self.users.find_one({'sn_id': user_sn_id})
         if stored:
-            return stored.get('data_load_at', True)
+            return stored.get('data_load_at', 'not_data_load')
         return False
 
     def save_user(self, user):
@@ -528,11 +546,12 @@ class Persistent(object):
         cache = self.cache.get_from_cache(s_object_sn_id)
         if cache == 1:
             return True
-        return self.social_objects.find({'sn_id':s_object_sn_id})
+        return self.social_objects.find_one({'sn_id':s_object_sn_id})
 
     def save_content_object(self, s_object):
         self.__form_user_ref(s_object)
         result = self._save_or_update_object(self.content_objects, s_object['sn_id'], s_object)
+        self.cache.add_to_cache(s_object['sn_id'], 1)
         return result
 
     def get_last_content_of_user(self, user_id, content_type):
@@ -547,19 +566,31 @@ class Persistent(object):
         return result
 
     def save_relations_for_diff(self, from_id, new_relation_set, relation_type):
+        """
+
+        :param from_id:
+        :param new_relation_set:
+        :param relation_type:
+        :return:
+        """
         list_name = self.redis.save_relations(from_id, new_relation_set, relation_type)
-        self.update_relations_metadata(list_name)
+        # self.update_relations_metadata(list_name)
         for el in new_relation_set:
-            if not self.users.find_one({'sn_id': el}):
+            if not self.is_not_loaded(el):
                 self.not_loaded_users.save({'_id': el})
 
     def save_relation(self, from_id, to_id, relation_type):
-        list_name = self.redis.save_relations(from_id, to_id, relation_type)
-        self.update_relations_metadata(list_name)
+        list_name, list_out_name = self.redis.save_relations(from_id, to_id, relation_type)
+
+        # if isinstance(list_out_name,list):
+        #     [self.update_relations_metadata(el) for el in list_out_name]
+        # else:
+        #     self.update_relations_metadata(list_out_name)
+        # self.update_relations_metadata(list_name)
 
     def remove_relation(self, from_id, to_id, relation_type):
         list_name = self.redis.remove_relation(from_id, relation_type, to_id)
-        self.update_relations_metadata(list_name)
+        # self.update_relations_metadata(list_name)
 
     def update_relations_metadata(self, metadata_name):
         res = self.relations_metadata.find_one({'relations_of': metadata_name})
@@ -569,7 +600,7 @@ class Persistent(object):
         else:
             self.relations_metadata.save({'relations_of': metadata_name, 'update_date': datetime.now()})
 
-    def get_related_users(self, from_id, relation_type, result_key=None, only_sn_ids=False):
+    def get_related_users(self, from_id, relation_type, result_key=None, only_sn_ids=False, backwards=False):
         """
         :param from_id - if it is none - return users which from to to_id (subject - [relation_type] -> user with to_id)
         else: (user with from_id - [relation_type] -> subject)
@@ -579,7 +610,7 @@ class Persistent(object):
         if isinstance(relation_type, list):
             refs = []
             for relation_type_element in relation_type:
-                refs.extend(self.redis.get_relations(from_id, relation_type_element))
+                refs.extend(self.redis.get_relations(from_id, relation_type_element,backwards=backwards))
         else:
             refs = self.redis.get_relations(from_id, relation_type)
         result = []

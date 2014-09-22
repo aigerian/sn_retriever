@@ -4,8 +4,6 @@ file for properties
 """
 import random
 
-__author__ = '4ikist'
-
 import logging
 import sys
 import os
@@ -18,6 +16,8 @@ def module_path():
         )
     return os.path.dirname(unicode(__file__, sys.getfilesystemencoding()))
 
+
+debug = False
 
 certs_path = os.path.join(module_path(), 'cacert.pem')
 
@@ -170,7 +170,7 @@ logger.addHandler(ch)
 logging.getLogger('requests.packages.urllib3.connectionpool').propagate = False
 
 #данные для подключения к mongo (основная БД)
-db_port = 27017
+db_port = 27018
 db_host = 'localhost'
 db_name = 'vk'
 db_user = '4ikist'
@@ -180,7 +180,7 @@ db_password = 'sederfes'
 redis_host = '127.0.0.1'
 redis_port = 6379
 redis_batch_size = 185000
-redis_cache_time = 3600
+redis_cache_time = 60
 
 #dictionaries for pymorphy
 dicts_path = os.path.join(os.path.dirname(__file__), 'dicts', 'ru', 'morphs.pickle')

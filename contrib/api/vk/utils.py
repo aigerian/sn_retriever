@@ -3,6 +3,7 @@ import datetime
 from contrib.api.vk.vk_entities import ContentResult, VK_APIContentObject, VK_APIMessage, VK_APISocialObject, \
     rel_types_groups, \
     unix_time
+
 import properties
 
 
@@ -11,52 +12,6 @@ __author__ = '4ikist'
 log = properties.logger.getChild('vk_utils')
 
 
-def persist_content_result(content_result, user_id, persist, vk):
-    """
-    Сохраняет результат правильно. Сначала пользователей и их связи, а потом их данные. Ибо чтобы было привязывать к кому.
-    Пользователей загружает скопом
-    :param content_result: контент который сохраняем
-    :param user_id: идентификатор пользователя которого сохраняем
-    :return:
-    """
-    output_users = []
-    not_data_loaded_users = []
-    not_loaded_users = []
-    not_loaded_groups = []
-    def add_new_user(new_user_id):
-        if new_user_id != user_id:
-            is_loaded = persist.is_user_data_loaded(new_user_id)
-            if isinstance(is_loaded, datetime.datetime):
-                return
-            elif is_loaded == True:
-                not_data_loaded_users.append(new_user_id)
-            else:
-                not_loaded_users.append(new_user_id)
-
-    def add_new_group(group_id):
-        if not persist.is_social_object_saved(group_id):
-            not_loaded_groups.append(group_id)
-    if content_result is None:
-        return
-
-    for from_id, rel_type, to_id in content_result.relations:
-        if rel_type not in rel_types_groups:  # если связь не с группой
-            add_new_user(from_id), add_new_user(to_id)
-        elif rel_type in rel_types_groups:
-            add_new_group(to_id)
-        persist.save_relation(from_id, to_id, rel_type)
-    log.info("found %s related and not loaded users" % len(not_loaded_users))
-    log.info("found %s related and not data loaded users" % len(not_data_loaded_users))
-    log.info("found %s related and not loaded groups" % len(not_loaded_groups))
-    log.info("will load....")
-    groups = vk.get_groups_info(not_loaded_groups)
-    persist.save_object_batch(groups)
-
-    users = vk.get_users_info(not_loaded_users)
-    persist.save_object_batch(users)
-
-    persist.save_object_batch(content_result.get_content_to_persist())
-    return not_data_loaded_users+not_loaded_users
 
 
 def _get_from_dict_part_of_key(dict, part_of_key):
@@ -160,7 +115,7 @@ def wall_retrieve(wall_elements):
              'created_at': unix_time(wall_post_data['date']),
              'geo': wall_post_data.get('geo')
             })
-        if 'attachments' in wall_post_data:#Аттачменты прибавляют и текстовых данных.
+        if 'attachments' in wall_post_data:  # Аттачменты прибавляют и текстовых данных.
             wall_post['attachments'] = []
             for attachment in wall_post_data['attachments']:
                 att_type = attachment.get('type')
@@ -211,24 +166,28 @@ def note_retrieve(note_elements):
     return content_result
 
 
-def group_retrieve(group_elements, user):
+def group_retrieve(group_elements, user_id):
     content_result = ContentResult()
     for el in group_elements:
         group = VK_APISocialObject(el)
         content_result.add_content(group)
-        content_result.add_relations((user.sn_id, 'member', group.sn_id))
+        content_result.add_relations((user_id, 'member', group.sn_id))
     return content_result
 
 
-def subscriptions_retrieve(subscription_elements, user):
+def subscriptions_retrieve(subscription_elements, user_id):
     content_result = ContentResult()
     for el in subscription_elements:
-        if el.get('is_admin'):
-            content_result.add_relations((user.sn_id, 'admin', el['id']))
-        elif el.get('is_member'):
-            content_result.add_relations((user.sn_id, 'member', el['id']))
+        type = el.get('type')
+        if type == 'profile':
+            content_result.add_relations((user_id, 'follower', el['id']))
         else:
-            content_result.add_relations((user.sn_id, 'subscribe', el['id']))
-        page = VK_APISocialObject(el)
-        content_result.add_content(page)
+            if el.get('is_admin'):
+                content_result.add_relations((user_id, 'admin', el['id']))
+            elif el.get('is_member'):
+                content_result.add_relations((user_id, 'member', el['id']))
+            else:
+                content_result.add_relations((user_id, 'subscribe', el['id']))
+            page = VK_APISocialObject(el)
+            content_result.add_content(page)
     return content_result

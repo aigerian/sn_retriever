@@ -3,8 +3,9 @@ from collections import defaultdict
 from functools import partial
 from itertools import chain
 from contrib.api.entities import API, APIException, APISocialObject, APIResponseException
+from contrib.api.vk.utils import group_retrieve
 from contrib.api.vk.vk_entities import VK_APIUser, rel_types_groups, ContentResult, VK_APIMessage, unix_time, \
-    VK_APIContentObject, get_mentioned
+    VK_APIContentObject, get_mentioned, VK_APISocialObject
 import properties
 
 __author__ = '4ikist'
@@ -218,11 +219,6 @@ class VK_API(API):
         return list(result)
 
     def get_groups(self, user_id):
-        def get_members(group_id):
-            return list(self.get_all('groups.getMembers', batch_size=1000, items_process=lambda x: x['users'],
-                                     **{'sort': 'time_asc', 'gid': group_id}))
-
-        result = []
         command = 'groups.get'
         group_result = self.get_all(command, batch_size=1000,
                                     count_process=self.array_count_process,
@@ -230,20 +226,7 @@ class VK_API(API):
                                     **{'uid': user_id,
                                        'extended': 1,
                                        'fields': properties.vk_group_fields})
-        for group in group_result:
-            try:
-                members = get_members(group['gid'])
-                group['members'] = members
-            except APIException as e:
-                self.log.warn('can not load group members :( for group [%s]' % group.get('name'))
-            result.append(APISocialObject({'sn_id': group['gid'],
-                                           'private': group['is_closed'],
-                                           'name': group['name'],
-                                           'screen_name': group['screen_name'],
-                                           'type': group['type'],
-                                           'source': 'vk'
-            }))
-        return result
+        return group_retrieve(group_result, user_id)
 
     def check_members(self, candidates, group_id):
         relations = []
@@ -290,7 +273,7 @@ class VK_API(API):
         return contentResult
 
     def get_groups_info(self, group_ids):
-        return self.get_users_info(group_ids,credentials={'commend':'groups.getById', 'ids_name':'group_ids', 'fields_value':properties.vk_group_fields}, reformer=APISocialObject)
+        return self.get_users_info(group_ids,credentials={'command':'groups.getById', 'ids_name':'group_ids', 'fields_value':properties.vk_group_fields}, reformer=VK_APISocialObject)
 
     def get_group_data(self, group_id):
         """
