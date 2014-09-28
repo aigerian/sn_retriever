@@ -200,7 +200,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
             if self.api:
                 message, user = self.api.get_message(message_id)
                 user_ref = self.database.get_user_ref({'_id': self.database.save_user(user)})
-                message['user'] = user_ref
+                message['owner'] = user_ref
                 self.database.save_message(message)
         return message
 
@@ -215,7 +215,7 @@ class TTR_Characterisitcs(BaseCharacteristics):
             for el in result_from_api:
                 el['user'] = db_user_ref
                 self.database.save_message(el)
-        messages = self.database.get_messages(dict({'user': db_user_ref}, **params if params else {}))
+        messages = self.database.get_messages(dict({'owner': db_user_ref}, **params if params else {}))
         return list(messages)
 
     def __get_actual_relations(self, user, relations_type='friends'):

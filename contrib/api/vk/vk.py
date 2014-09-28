@@ -35,7 +35,9 @@ class AccessTokenHolder(object):
         """
         self.log = properties.logger.getChild('VK_API_token_holder')
         self.tokens = {}
-        for el in logins.itervalues() if logins else properties.vk_logins.itervalues():
+        if len(logins) == 0:
+            return
+        for el in logins if logins is not None else properties.vk_logins:
             token = self.__auth(el)
             self.tokens[token['access_token']] = token
         self.current_login = None
@@ -43,6 +45,8 @@ class AccessTokenHolder(object):
     def get_token(self, used_token=None):
         if used_token:
             self.tokens[used_token]['last_used'] = datetime.datetime.now()
+        if len(self.tokens) == 0:
+            return None
         candidates = {}
         for token in self.tokens.itervalues():
             if 'last_used' in token:
@@ -73,7 +77,6 @@ class AccessTokenHolder(object):
         :return: access token
         """
         # process first page
-        self.log.info('vkontakte authenticate for %s' % vk_login)
         s = requests.Session()
         s.verify = properties.certs_path
         result = s.get('https://oauth.vk.com/authorize', params=properties.vk_access_credentials)
@@ -104,7 +107,8 @@ class AccessTokenHolder(object):
         access_token['init_time'] = datetime.datetime.now()
         access_token['expires_in'] = float(access_token['expires_in'])
         access_token['login'] = vk_login
-        self.log.info('get access token: \n%s' % access_token)
+        # self.log.info('get access token: \n%s' % access_token)
+        self.log.info('vkontakte authenticate for %s' % vk_login)
         return access_token
 
     def __check_for_update(self, token):
@@ -120,15 +124,19 @@ class AccessTokenHolder(object):
 class VK_API(API):
     # __metaclass__ = Singleton
 
-    def __init__(self, logins=None, no_auth=False, base_url='',):
+    def __init__(self, logins=None, auth=True, base_url='', ):
         self.log = properties.logger.getChild('VK_API')
-        if no_auth:
+        if auth:
             self.token_holder = AccessTokenHolder(logins=logins)
             self.access_token = self.token_holder.get_token()
             self.base_url = 'https://api.vk.com/method/'
-        self.base_url = base_url
+        else:
+            self.base_url = base_url
         self.array_item_process = lambda x: x[1:]
         self.array_count_process = lambda x: x[0]
+
+    def get_logins(self):
+        return [el['login'] for el in self.token_holder.tokens.itervalues()]
 
     def get(self, method_name, **kwargs):
         def change_token(e):
@@ -144,7 +152,7 @@ class VK_API(API):
                 result = requests.get('%s%s' % (self.base_url, method_name), params=params, timeout=5)
             except TimeoutError as e:
                 change_token(e)
-                change_token_succession+=1
+                change_token_succession += 1
                 continue
             if result.status_code != 200:
                 raise APIResponseException("could not load because: %s" % result.reason)
@@ -285,7 +293,9 @@ class VK_API(API):
         return contentResult
 
     def get_groups_info(self, group_ids):
-        return self.get_users_info(group_ids,credentials={'command':'groups.getById', 'ids_name':'group_ids', 'fields_value':properties.vk_group_fields}, reformer=VK_APISocialObject)
+        return self.get_users_info(group_ids, credentials={'command': 'groups.getById', 'ids_name': 'group_ids',
+                                                           'fields_value': properties.vk_group_fields},
+                                   reformer=VK_APISocialObject)
 
     def get_group_data(self, group_id):
         """
@@ -312,7 +322,7 @@ class VK_API(API):
                                                            'create_date': unix_time(topic['created']),
                                                            'change_date': unix_time(topic['updated']),
                                                            'type': 'group_topic',
-                                                           'user': {'sn_id': topic_user_id}}))
+                                                           'owner': {'sn_id': topic_user_id}}))
         # load group photos
         photos_content_result = self.get_photos(-group_id)
         # ддобавляем связи пользователей с группой которые добавили фотографию/видео к группе
@@ -501,7 +511,7 @@ class VK_API(API):
                 photo_owner = user_id if not for_group else photo_el['user_id']
                 photo = VK_APIContentObject({'sn_id': photo_el.get('id') or photo_el.get('pid'),
                                              'type': 'photo',
-                                             'user': {'sn_id': photo_owner},
+                                             'owner': {'sn_id': photo_owner},
                                              'parent_id': photo_el['aid'],
                                              'text': photo_el['text'],
                                              'create_date': unix_time(photo_el['created']),
@@ -525,7 +535,7 @@ class VK_API(API):
             for album in albums_result:
                 contentResult.add_content(VK_APIContentObject({'sn_id': album['aid'],
                                                                'type': 'photo_album',
-                                                               'user': {'sn_id': user_id},
+                                                               'owner': {'sn_id': user_id},
                                                                'text': '%s\n%s' % (
                                                                    album['title'], album.get('description')),
                                                                'create_date': unix_time(album['created']),
@@ -560,7 +570,7 @@ class VK_API(API):
                 video_owner_id = user_id if not for_group else video_el['user_id']
                 video = VK_APIContentObject({'sn_id': video_el.get('id') or video_el.get('vid'),
                                              'type': 'video',
-                                             'user': {'sn_id': video_owner_id},
+                                             'owner': {'sn_id': video_owner_id},
                                              'text': '%s\n%s' % (video_el['title'], video_el['description']),
                                              'create_date': unix_time(video_el['date']),
                                              'comments_count': video_el['comments'],
@@ -628,7 +638,7 @@ class VK_API(API):
                               **{'owner_id': user_id, 'post_id': post_id})
         for repost in result:
             reposts.append(
-                {'user': repost['from_id'], 'created': unix_time(repost['date']), 'text': repost['text']})
+                {'owner': repost['from_id'], 'created': unix_time(repost['date']), 'text': repost['text']})
         return reposts
 
     def get_wall_posts(self, user_id):
@@ -654,7 +664,7 @@ class VK_API(API):
                                 wall_post['comments']['count'] > 0:
 
                     content_object = {'sn_id': '_'.join(['wall', str(user_id), str(wall_post['id'])]),
-                                      'user': {'sn_id': user_id}, }
+                                      'owner': {'sn_id': user_id}, }
 
                     if wall_post['likes']['count'] != 0:
                         wall_post_likers = self.get_likers_ids('post', user_id, wall_post['id'])
@@ -667,7 +677,7 @@ class VK_API(API):
                     if wall_post['reposts']['count'] != 0:
                         reposts = self.get_reposts(user_id, wall_post['id'])
                         content_object['reposts'] = reposts
-                        contentResult.add_relations([(el['user'], 'repost', user_id) for el in reposts])
+                        contentResult.add_relations([(el['owner'], 'repost', user_id) for el in reposts])
                     contentResult.add_relations([(user_id, 'mentioned', el) for el in get_mentioned(wall_post['text'])])
 
                     post = VK_APIMessage(dict(content_object,

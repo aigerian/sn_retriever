@@ -1,10 +1,14 @@
 # coding: utf-8
 
+import pickle
 from datetime import datetime
+import threading
 import time
 import json
 from bson import DBRef
+from bson.objectid import ObjectId
 from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject
+from contrib.timers import stopwatch
 import properties
 from pymongo import MongoClient, ASCENDING
 
@@ -299,6 +303,26 @@ class RedisCacheMixin(object):
         self.engine.incrby(key, by)
 
 
+class PersistentDeferredWorker(threading.Thread):
+    def __init__(self, persist):
+        super(PersistentDeferredWorker, self).__init__()
+        r_client = redis.StrictRedis()
+        self.pubsub = r_client.pubsub()
+        self.pubsub.subscribe(**{'deferred_channel': self.handle_message})
+        self.persist = persist
+
+    def handle_message(self, message):
+        object = pickle.loads(message['data'])
+        if not isinstance(object, list):
+            object = [object]
+        self.persist.save_object_batch(object)
+
+
+    def run(self):
+        for item in self.pubsub.listen():
+            pass
+
+
 class Persistent(object):
     def __create_index(self, collection, field_or_list, direction, unique, **index_kwargs):
         index_info = collection.index_information()
@@ -310,29 +334,29 @@ class Persistent(object):
             index_param = [(field_or_list, direction)]
 
         if index_name in index_info:
-            log.info('%s index is ensured!'%index_name)
+            log.debug('to collection %s [%s] index is ensured!' % (collection, index_name))
             return
         else:
             collection.ensure_index(index_param, unique=unique, **index_kwargs)
 
     def __init__(self, truncate=False):
-        log.info("Start persistence engine with truncate:%s" % truncate)
+        log.info("Start persistence engine with truncate: %s" % truncate)
         mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (db_user, db_password, db_host, db_port, db_name)
         try:
-            self.engine = MongoClient(mongo_uri)
+            self.mongo_engine = MongoClient(mongo_uri)
         except ConfigurationError as e:
-            self.engine = MongoClient(db_host, db_port)
+            self.mongo_engine = MongoClient(db_host, db_port)
         except ConnectionFailure as e:
             log.error('can not connect to database server %s' % e)
             exit(-1)
         except Exception as e:
             log.exception(e)
 
-        self.database = self.engine[db_name]
+        self.database = self.mongo_engine[db_name]
 
         self.messages = self.database['messages']
         self.__create_index(self.messages, 'sn_id', ASCENDING, True)
-        self.__create_index(self.messages, 'user', ASCENDING, False)
+        self.__create_index(self.messages, 'owner', ASCENDING, False)
         self.__create_index(self.messages, 'source', ASCENDING, False)
         self.__create_index(self.messages, 'text', 'text', False, language_override='lang')
 
@@ -369,6 +393,7 @@ class Persistent(object):
         self.__create_index(self.deleted_users, 'sn_id', ASCENDING, True)
 
         self.redis = RedisBaseMixin(truncate)
+        self.redis_client_deferred = redis.StrictRedis(host=redis_host, port=redis_port, db=2)
 
         self.cache = RedisCacheMixin(truncate=True)
 
@@ -381,6 +406,15 @@ class Persistent(object):
             self.changes.remove()
             self.deleted_users.remove()
 
+    def start_listen_deferred_objects(self):
+        log.info('starting listening objects for deferred saving')
+        self.worker = PersistentDeferredWorker(self)
+        self.worker.start()
+        self.worker.join()
+
+    @stopwatch
+    def save_deferred(self, objects):
+        self.redis_client_deferred.publish('deferred_channel', pickle.dumps(objects, pickle.HIGHEST_PROTOCOL))
 
     def add_deleted_user(self, user_sn_id):
         found = self.deleted_users.find_one({'sn_id': user_sn_id})
@@ -391,7 +425,6 @@ class Persistent(object):
         assert changes.get('sn_id')
         assert changes.get('datetime')
         self.changes.save(changes)
-
 
     def get_observed_users_ids(self, update_iteration_time, source):
         """
@@ -475,6 +508,7 @@ class Persistent(object):
             return stored.get('data_load_at', 'not_data_load')
         return False
 
+    # @stopwatch
     def save_user(self, user):
         screen_name = user.get('screen_name')
         if screen_name is None:
@@ -514,47 +548,85 @@ class Persistent(object):
         if message:
             return APIMessage(message)
 
-    def __form_user_ref(self, users_object):
-        if not isinstance(users_object.get('user'), DBRef):
-            try:
-                user_sn_id = int(users_object.get('user').get('sn_id'))
-            except ValueError:
-                user_sn_id = users_object.get('user').get('sn_id')
-            if user_sn_id is None:
-                raise DataBaseMessageException('User sn_id can not be None')
-            user = self.get_user(sn_id=user_sn_id)
-            if user:
-                user_ref = self.get_user_ref(user)
-                users_object['user'] = user_ref
-            else:
-                self.not_loaded_users.save({'_id': user_sn_id})
-                # raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
-            users_object['user_id'] = user_sn_id
-
+    # def __form_owner_ref(self, users_object):
+    # if not isinstance(users_object.get('owner'), DBRef):
+    # try:
+    # owner_sn_id = int(users_object.get('owner').get('sn_id'))
+    # except ValueError:
+    # owner_sn_id = users_object.get('owner').get('sn_id')
+    # if owner_sn_id is None:
+    # raise DataBaseMessageException('Owner sn_id can not be None')
+    # if users_object.get('owner').get('type') == 'group':
+    # group = self.get_social_object(owner_sn_id)
+    # if group:
+    # group_ref = DBRef(self.social_objects, group['_id'])
+    # users_object['owner'] = group_ref
+    # else:
+    # user = self.get_user(sn_id=owner_sn_id)
+    # if user:
+    # user_ref = self.get_user_ref(user)
+    # users_object['owner'] = user_ref
+    # users_object['group_id'] = owner_sn_id
+    # else:
+    # self.not_loaded_users.save({'_id': owner_sn_id})
+    #                 # raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
+    #             users_object['user_id'] = owner_sn_id
+    # @stopwatch
     def save_message(self, message):
         """
         saving message. message must be a dict with field user, this field must be a DbRef or dict ith sn_id of some user in db
         """
-        self.__form_user_ref(message)
+        # self.__form_owner_ref(message)
+        cache_obj = self.cache.get_from_cache(message['sn_id'], ObjectId)
+        if cache_obj:
+            return cache_obj
         result = self._save_or_update_object(self.messages, message['sn_id'], message)
+        self.cache.add_to_cache(message['sn_id'], str(result))
         return result
 
+    @stopwatch
+    def save_messages(self, objects):
+        for el in objects:
+            self.save_message(el)
+
+    # @stopwatch
     def save_social_object(self, s_object):
+        cache_obj = self.cache.get_from_cache(s_object['sn_id'], ObjectId)
+        if cache_obj:
+            return cache_obj
         result = self._save_or_update_object(self.social_objects, s_object['sn_id'], s_object)
-        self.cache.add_to_cache(s_object['sn_id'], 1)
+        self.cache.add_to_cache(s_object['sn_id'], str(result))
         return result
+
+    def save_social_objects(self, objects):
+        for el in objects:
+            self.save_social_object(el)
+
+    def get_social_object(self, parameter):
+        s_object = self.social_objects.find_one(parameter)
+        return s_object
 
     def is_social_object_saved(self, s_object_sn_id):
-        cache = self.cache.get_from_cache(s_object_sn_id)
-        if cache == 1:
+        cache = self.cache.get_from_cache(s_object_sn_id, ObjectId)
+        if cache:
             return True
         return self.social_objects.find_one({'sn_id': s_object_sn_id})
 
+    # @stopwatch
     def save_content_object(self, s_object):
-        self.__form_user_ref(s_object)
+        # self.__form_owner_ref(s_object)
+        cache_obj = self.cache.get_from_cache(s_object['sn_id'], ObjectId)
+        if cache_obj:
+            return cache_obj
+
         result = self._save_or_update_object(self.content_objects, s_object['sn_id'], s_object)
-        self.cache.add_to_cache(s_object['sn_id'], 1)
+        self.cache.add_to_cache(s_object['sn_id'], str(result))
         return result
+
+    @stopwatch
+    def save_content_objects(self, content_objects):
+        for el in content_objects:
+            self.save_content_object(el)
 
     def get_last_content_of_user(self, user_id, content_type):
         result = list(self.content_objects.find(spec={'user_id': user_id, 'type': content_type}, limit=1,
@@ -588,7 +660,7 @@ class Persistent(object):
         # if isinstance(list_out_name,list):
         # [self.update_relations_metadata(el) for el in list_out_name]
         # else:
-        #     self.update_relations_metadata(list_out_name)
+        # self.update_relations_metadata(list_out_name)
         # self.update_relations_metadata(list_name)
 
     def remove_relation(self, from_id, to_id, relation_type):
@@ -638,6 +710,7 @@ class Persistent(object):
             return result.get('update_date')
         return None
 
+    @stopwatch
     def save_object_batch(self, object_batch):
         """
         сохраняет список объектов
@@ -705,7 +778,7 @@ class Persistent(object):
 
 if __name__ == '__main__':
     db = Persistent()
-    db.save_path([1, 3, 4, 5, 6, 7, 8])
-    db.save_path([1, 3, 4, 5, 6])
-    db.get_path(1, 6)
-
+    # db.start_listen_deferred_objects()
+    result = db.save_user(APIUser({'sn_id': 'test', 'name': 'test', 'screen_name': 'test'}))
+    print result
+    print ObjectId(str(result)) == result

@@ -9,11 +9,12 @@ import html2text
 from contrib.api.entities import APIUser, APIMessage, APIContentObject, APISocialObject, delete_fields_with_prefix, \
     APIException
 import re
+import properties
 
 __author__ = '4ikist'
 
 rel_types_groups = ['member', 'admin', 'subscribe', 'request', 'invitation']
-rel_types_users = ['friend', 'follower', 'like', 'comment', 'mentions']
+rel_types_users = ['friend', 'follower', 'like', 'comment', 'mentions', 'board_create', 'board_comment']
 
 iterated_counters = {'subscriptions': 200,
                      'followers': 1000,
@@ -26,6 +27,8 @@ iterated_counters = {'subscriptions': 200,
 
 unix_time = lambda x: datetime.datetime.fromtimestamp(int(x))
 to_unix_time = lambda x: int(time.mktime(x.timetuple()))
+log = properties.logger.getChild('entities')
+
 
 def get_mentioned(text):
     """
@@ -41,7 +44,12 @@ def get_mentioned(text):
 def _process_text_fields(data):
     for key in ['text', 'title', 'message', 'description', ]:
         if key in data and data.get(key) is not None:
-            data[key] = html2text.html2text(data[key]).strip()
+            try:
+                data[key] = html2text.html2text(data[key]).strip()
+            except Exception as e:
+                log.warn("error in processing text data: %s\ntext data: %s" % (e, data[key]))
+
+
 
 class VK_APIUser(APIUser):
     def __init__(self, data_dict):
@@ -60,7 +68,6 @@ class VK_APIUser(APIUser):
                 except ValueError as e:
                     print bdate
 
-
         if data_dict.get('last_seen'):
             data_dict['last_visit'] = unix_time(data_dict['last_seen']['time'])
             data_dict.pop('last_seen')
@@ -69,7 +76,8 @@ class VK_APIUser(APIUser):
             data_dict['followers_count'] = counters['followers']
             data_dict['friends_count'] = counters['friends']
         if 'screen_name' not in data_dict:
-            data_dict['screen_name'] = data_dict.get('screen_name') or data_dict.pop('domain', None) or data_dict.get('sn_id')
+            data_dict['screen_name'] = data_dict.get('screen_name') or data_dict.pop('domain', None) or data_dict.get(
+                'sn_id')
         data_dict['name'] = data_dict['first_name'] + ' ' + data_dict['last_name']
         super(VK_APIUser, self).__init__(data_dict)
 
@@ -77,8 +85,8 @@ class VK_APIUser(APIUser):
 class VK_APIMessage(APIMessage):
     def __init__(self, data_dict, created_at_format=None, comment_for=None, comment_id=None):
         data_dict['source'] = 'vk'
-        if data_dict.get('user', None) is None:
-            data_dict['user'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
+        if data_dict.get('owner', None) is None:
+            data_dict['owner'] = {'sn_id': data_dict.pop('from_id', None) or data_dict.get('uid', None)}
         if not 'sn_id' in data_dict:
             data_dict['sn_id'] = data_dict.pop('cid', None) or data_dict.pop('id', None)
         if 'created_at' not in data_dict:
@@ -86,7 +94,7 @@ class VK_APIMessage(APIMessage):
         if comment_for:
             data_dict['comment_for'] = comment_for
             data_dict['comment_id'] = comment_id or data_dict['comment_id']
-        data_dict['user_id'] = data_dict['user']['sn_id']
+        data_dict['owner_id'] = data_dict['owner']['sn_id']
 
         data_dict.pop('cid', None)
         data_dict.pop('online', None)
@@ -170,7 +178,7 @@ class ContentResult(object):
         return self.__add_object(APIContentObject, self.content, content_objects)
 
     def get_content_to_persist(self):
-        return chain(self.comments, self.content)
+        return self.comments+self.content
 
     @property
     def content(self):
@@ -230,6 +238,6 @@ if __name__ == '__main__':
     cr1.add_relations([(1, 'member', 1), (1, 'member', 2), (2, 'comment', 1), (2, 'comment', 2)])
     cr2 = ContentResult()
     cr2.add_relations([(1, 'member', 1), (1, 'comment', 2), (2, 'member', 1), (2, 'comment', 1)])
-    cr1+=cr2
+    cr1 += cr2
     print cr1.relations
 

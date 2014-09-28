@@ -11,17 +11,16 @@ __author__ = '4ikist'
 
 log = properties.logger.getChild('vk_utils')
 
+
 class Singleton(type):
     _instances = {}
+
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         else:
             cls._instances[cls].__init__(*args, **kwargs)
         return cls._instances[cls]
-
-
-
 
 
 def _get_from_dict_part_of_key(dict, part_of_key):
@@ -33,9 +32,10 @@ def _get_from_dict_part_of_key(dict, part_of_key):
 def photo_retrieve(photo_elements):
     content_result = ContentResult()
     for el in photo_elements:
-        photo_content = VK_APIContentObject({'sn_id': '%s_photo_%s' % (el['id'], el['owner_id']),
+        owner_id = el['owner_id']
+        photo_content = VK_APIContentObject({'sn_id': '%s_photo_%s' % (el['id'], owner_id),
                                              'album': el['album_id'],
-                                             'user': {'sn_id': el['owner_id']},
+                                             'owner': {'sn_id': owner_id, 'type': 'user' if owner_id > 0 else 'group'},
                                              'text': el['text'],
                                              'created_at': unix_time(el['date']),
                                              'url': el['sizes'][-1]['src'] if el.get(
@@ -54,7 +54,7 @@ def photo_comments_retrieve(photo_comments_elements, user_id):
         photo_comment = VK_APIMessage({'sn_id': 'comment_%s_for[%s_photo_%s]' % (el['id'], el['pid'], user_id),
                                        'text': el['text'],
                                        'created_at': unix_time(el['date']),
-                                       'user': {'sn_id': el['from_id']},
+                                       'owner': {'sn_id': el['from_id'], 'type': 'user'},
                                        'likes_count': el['likes']['count']},
                                       comment_for={'sn_id': '%s_photo_%s' % (el['pid'], user_id), 'type': 'photo'},
                                       comment_id=el['id'])
@@ -78,7 +78,7 @@ def comments_retrieve(comments_elements, user_id, object_type, object_id):
             {'sn_id': 'comment_%s_for[%s_%s_%s]' % (comment_data['id'], object_id, object_type, user_id),
              'text': comment_data['text'],
              'created_at': unix_time(comment_data['date']),
-             'user': {'sn_id': comment_data['from_id']},
+             'owner': {'sn_id': comment_data['from_id'], 'type': 'user'},
              'likes_count': comment_data['likes']['count']},
             comment_for={'sn_id': '%s_%s_%s' % (object_id, object_type, user_id), 'type': object_type},
             comment_id=comment_data['id'])
@@ -94,8 +94,9 @@ def comments_retrieve(comments_elements, user_id, object_type, object_id):
 def video_retrieve(video_elements):
     content_result = ContentResult()
     for el in video_elements:
-        video_content = VK_APIContentObject({'sn_id': '%s_video_%s' % (el.get('id') or el.get('vid'), el['owner_id']),
-                                             'user': {'sn_id': el['owner_id']},
+        owner_id = el['owner_id']
+        video_content = VK_APIContentObject({'sn_id': '%s_video_%s' % (el.get('id') or el.get('vid'), owner_id),
+                                             'owner': {'sn_id': owner_id, 'type': 'user' if owner_id > 0 else 'group'},
                                              'text': "%s %s" % (el['title'], el['description']),
                                              'created_at': unix_time(el['date']),
                                              'views_count': el['views'],
@@ -110,8 +111,9 @@ def video_retrieve(video_elements):
 def wall_retrieve(wall_elements):
     content_result = ContentResult()
     for wall_post_data in wall_elements:
+        owner_id = wall_post_data['owner_id']
         wall_post = VK_APIContentObject(
-            {'sn_id': '%s_wall_post_%s' % (wall_post_data['id'], wall_post_data['owner_id']),
+            {'sn_id': '%s_wall_post_%s' % (wall_post_data['id'], owner_id),
              'post_id': wall_post_data['id'],
              'repost_count': wall_post_data['reposts']['count'],
              'comments_count': wall_post_data['comments']['count'],
@@ -121,7 +123,7 @@ def wall_retrieve(wall_elements):
              'post_type': wall_post_data['post_type'],
              'type': 'wall_post',
              'wall_post_id': wall_post_data['id'],
-             'user': {'sn_id': wall_post_data['owner_id']},
+             'owner': {'sn_id': owner_id, 'type': 'user' if owner_id > 0 else 'group'},
              'created_at': unix_time(wall_post_data['date']),
              'geo': wall_post_data.get('geo')
             })
@@ -167,12 +169,30 @@ def note_retrieve(note_elements):
     for note_data in note_elements:
         note = VK_APIContentObject({'sn_id': '%s_note_%s' % (note_data['id'], note_data['owner_id']),
                                     'comments_count': note_data['comments'],
-                                    'user': {'sn_id': note_data['owner_id']},
+                                    'owner': {'sn_id': note_data['owner_id'], 'type': 'user'},
                                     'created_at': unix_time(note_data['date']),
                                     'note_id': note_data['id'],
                                     'text': '%s %s' % (note_data['title'], note_data['title']),
         })
         content_result.add_content(note)
+    return content_result
+
+
+def board_retrieve(board_elements, group_id):
+    content_result = ContentResult()
+    for el in board_elements:
+        board = VK_APIContentObject({
+            'sn_id': el['id'],
+            'text': el['title'],
+            'created': unix_time(el['created']),
+            'updated': unix_time(el['updated']),
+            'comments_count': el['comments'],
+            'closed': el['is_closed'],
+            'type': 'board'
+        })
+        content_result.add_content(board)
+        content_result.add_relations((el['created_by'], 'board_create', group_id))
+        content_result.add_relations((el['updated_by'], 'board_comment', group_id))
     return content_result
 
 

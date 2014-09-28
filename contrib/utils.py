@@ -1,4 +1,6 @@
 # coding=utf-8
+import datetime
+import properties
 
 __author__ = '4ikist'
 import re
@@ -31,3 +33,5 @@ def process_message(message):
             result.append({'content': token, 'type': 'word'})
 
     return result
+
+

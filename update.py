@@ -20,6 +20,16 @@ def update_data_for_source():
         persist.save_message(message)
     print 'updated %s messages' %counter
 
+def update_data_for_owner():
+    counter = 0
+    for message in persist.get_messages_iter({'user':{'$exists':True}}):
+        counter+=1
+        message['owner'] = message.pop('user')
+        message['owner_id'] = message.pop('user_id', None)
+        persist.save_message(message)
+    print 'updated %s messages' %counter
+
+    # for social_object in  persist.get_social_object({'user':})
 
 if __name__ == '__main__':
-    update_data_for_source()
+    update_data_for_owner()

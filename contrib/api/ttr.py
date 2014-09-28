@@ -331,10 +331,10 @@ class TTR_APIMessage(APIMessage):
             retweet = dict(retweet)
             rt_user = dict(retweet.get('user'))
             rt_user = {'sn_id': rt_user.get('id')}
-            retweet['user'] = rt_user
+            retweet['owner'] = rt_user
             data['retweeted_status'] = retweet
         user = {'sn_id': data['user']['id']}
-        data['user'] = user
+        data['owner'] = user
         data['sn_id'] = data.pop('id')
         data['created_at'] = dtprsr.parse(data['created_at'])
 

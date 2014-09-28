@@ -35,7 +35,7 @@ fb_user_pass = 'sederfes_fb#'
 
 # данные для твитера
 # linoleum2k12 / aspiranture_ttr!
-#sederfes / sederfes100500 / stack2008@gmail.com
+# sederfes / sederfes100500 / stack2008@gmail.com
 #pramen2 / sederfes100500 / pramen.toramen@gmail.com
 #kilogram_tabaka / sederfes100500 / sofia.bortnicova@gmail.com
 #ariantis_mar / sederfes100500 / ariantis.marcerinz@gmail.com
@@ -129,14 +129,14 @@ def get_ttr_credentials(number):
 vk_key = 'YcU5rO3vWTAUO0trVTS3'
 vk_app_name = 'vk_retr'
 
-vk_logins = {1: '+79811064022',
-             2: '+79060739957',
-             3: '+79138973664',
-             4: '+79060740391',
-             5: '+79516739528',
-             6: '+79043362166',
-             7: '+79043377563'
-}
+vk_logins = ['+79811064022',
+             '+79060739957',
+             '+79138973664',
+             '+79060740391',
+             '+79516739528',
+             '+79043362166',
+             '+79043377563'
+]
 
 vk_pass = 'sederfes100500'
 
@@ -145,11 +145,9 @@ vk_group_fields = 'city, country, place, description, wiki_page, members_count, 
 #vk helper...
 vk_api_version = 5.24
 vk_access_credentials = {'client_id': '4544084',
-                         # 'scope': 'notify,friends,photos,audio,video,docs,notes,pages,status,offers,questions,wall,groups,messages',
                          'scope': 999999,
                          'redirect_uri': 'https://oauth.vk.com/blank.html',
                          'display': 'wap',
-                         #'v': 5.24,
                          'response_type': 'token',
 }
 #also...
@@ -162,7 +160,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 fh = logging.FileHandler(log_file)
 ch = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s[%(levelname)s] %(name)s : %(message)s')
+formatter = logging.Formatter('%(asctime)s[%(levelname)s]%(name)s %(threadName)s : %(message)s')
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 logger.addHandler(fh)
