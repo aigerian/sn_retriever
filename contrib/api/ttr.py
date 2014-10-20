@@ -136,9 +136,9 @@ class TTR_API(object):
             finally:
                 self.limit_handler.consider_credentials_number(request_name, cred_number, request_time)
 
-    def get_relation_ids(self, user, relation_type='friends', from_cursor=-1):
+    def get_relation_ids(self, user_sn_id, relation_type='friends', from_cursor=-1):
         response = self.get(self.client.api[relation_type].ids.get,
-                            user_id=user.get('sn_id'),
+                            user_id=user_sn_id,
                             count=5000,
                             cursor=from_cursor)
         if response:
@@ -196,7 +196,7 @@ class TTR_API(object):
         else:
             return None
 
-    def get_users(self, ids=None, screen_names=None):
+    def get_users(self, ids=None):
         def fill_data(request_params):
             response = self.get(self.client.api.users.lookup.get, **request_params)
             if response:
@@ -206,19 +206,22 @@ class TTR_API(object):
 
         result = []
         result_ids = set()
-        request_params = {}
-        if ids:
-            for i in xrange((len(ids) / 100) + 1):
-                request_params['user_id'] = ",".join([str(el) for el in ids[i * 100:(i + 1) * 100]])
-                fill_data(request_params)
+        request_params = {'user_id': [], 'screen_name': []}
 
-        if screen_names:
-            for i in xrange((len(screen_names) / 100) + 1):
-                request_params['screen_name'] = ",".join([str(el) for el in screen_names[i * 100:(i + 1) * 100]])
-                fill_data(request_params)
+        for i in xrange((len(ids) / 100) + 1):
+            user_ids = []
+            screen_names = []
+            for el in ids[i * 100:(i + 1) * 100]:
+                try:
+                    user_ids.append(int(el))
+                except ValueError:
+                    screen_names.append(el)
+            request_params['user_id'] = user_ids
+            request_params['screen_name'] = screen_names
+            fill_data(request_params)
 
         log.info("must load: %s; loaded: %s" % (
-            len(ids) if ids else 0 + len(screen_names) if screen_names else 0, len(result)))
+            len(ids) if ids else 0, len(result)))
         not_loaded = result_ids.symmetric_difference(result_ids)
         return result, not_loaded
 
@@ -359,9 +362,9 @@ if __name__ == '__main__':
     # def found_user(user_ids, api, db):
     # for user_ids_batch, cursor in user_ids:
     # for user_id in user_ids_batch:
-    #             user = api.get_user(user_id=str(user_id))
-    #             if user:
-    #                 db.save_user(user)
+    # user = api.get_user(user_id=str(user_id))
+    # if user:
+    # db.save_user(user)
     #         db.save_duty({'work': 'medvedev_get_followers', 'cursor': cursor}, 'medvedev_get_followers')
     #
     #

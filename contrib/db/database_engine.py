@@ -207,8 +207,8 @@ class RedisGraphPersistent(nx.DiGraph):
 
 
 class RedisBaseMixin(object):
-    def __init__(self, truncate=False):
-        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
+    def __init__(self, truncate=False, db_num=0):
+        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=db_num)
         if truncate:
             self.engine.flushdb()
 
@@ -218,7 +218,7 @@ class RedisBaseMixin(object):
 
     def form_relations_list_out_name(self, from_, type_):
         if isinstance(from_, list):
-            return [self.form_relations_list_name(el, type_) for el in from_]
+            return [self.form_relations_list_out_name(el, type_) for el in from_]
         return '<%s:%s' % (from_, type_)
 
     def form_path_list_name(self, from_, to_):
@@ -249,7 +249,7 @@ class RedisBaseMixin(object):
     def get_count(self, from_, rel_type, backwards=True):
         out_result = 0
         if backwards:
-            out_result = self.engine.llen(self.form_relations_list_name(from_, rel_type))
+            out_result = self.engine.llen(self.form_relations_list_out_name(from_, rel_type))
         return self.engine.llen(self.form_relations_list_name(from_, rel_type)) + out_result
 
     # todo think about backwards or govnokode or good idea/
@@ -283,8 +283,8 @@ class RedisBaseMixin(object):
 
 
 class RedisCacheMixin(object):
-    def __init__(self, truncate):
-        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=0)
+    def __init__(self, truncate, db_num=1):
+        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=db_num)
         if truncate:
             self.engine.flushdb()
 
@@ -569,8 +569,8 @@ class Persistent(object):
     # users_object['group_id'] = owner_sn_id
     # else:
     # self.not_loaded_users.save({'_id': owner_sn_id})
-    #                 # raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
-    #             users_object['user_id'] = owner_sn_id
+    # # raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
+    # users_object['user_id'] = owner_sn_id
     # @stopwatch
     def save_message(self, message):
         """

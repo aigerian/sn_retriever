@@ -16,46 +16,56 @@ __doc__ = """
 relation_type = 'friends'
 start_user_screen_name = 'linoleum2k12'
 
-
 ttr = TTR_API()
+log = logger.getChild('walker_ttr')
 persist = Persistent()
 
-log = logger.getChild('walker_ttr')
 
-def get_user_relations(user_data, relation_type):
-    log.info('start loading user relations (%s) for user %s'%(relation_type, user_data.screen_name))
-    friends_ids, next_cursor = ttr.get_relation_ids(user_data, relation_type)
-    while next_cursor not in (0,-1):
-        if isinstance(friends_ids, list):
-            next_batch, next_cursor = ttr.get_relation_ids(user_data, relation_type, from_cursor=next_cursor)
-            friends_ids.extend(next_batch)
-    for el in set(friends_ids):
-        persist.save_relation(user_data.sn_id, el, relation_type)
-    return friends_ids
+def get_user_relations(user_sn_id, relation_type):
+    related_ids, next_cursor = ttr.get_relation_ids(user_sn_id, relation_type)
+    while next_cursor not in (0, -1):
+        if isinstance(related_ids, list):
+            next_batch, next_cursor = ttr.get_relation_ids(user_sn_id, relation_type, from_cursor=next_cursor)
+            related_ids.extend(next_batch)
+
+    persist.save_relation(user_sn_id, list(set(related_ids)), relation_type)
+    return related_ids
 
 
 def persist_messages(user_data):
     log.info('start loading timeline for user %s' % user_data.screen_name)
     user_messages = ttr.get_all_timeline(user_data)
+    count_saved = 0
     for message in user_messages:
         persist.save_message(message)
+        count_saved += 1
+    log.info('loaded: %s messages' % count_saved)
 
 
 def persist_all_user_data_and_retrieve_friends_ids(screen_name, relation_type):
-    log.info('start loading user: %s'%screen_name)
-    user = ttr.get_user(screen_name=screen_name)
+    log.info('start loading user: %s' % screen_name)
+    if isinstance(screen_name, int) or screen_name.isdigit():
+        user = ttr.get_user(user_id=screen_name)
+    else:
+        user = ttr.get_user(screen_name=screen_name)
+    if user is None:
+        log.error('can not load %s :(' % screen_name)
+        return []
     persist.save_user(user)
     persist_messages(user)
-    return get_user_relations(user, relation_type)
+    log.info('start loading %s of %s' % (relation_type, user.screen_name))
+    related_ids = get_user_relations(user.sn_id, relation_type)
+    log.info('loaded %s related ids' % len(related_ids))
+    return related_ids
 
 
 def persist_users_by_ids_and_retrieve_friends(ids, relation_type):
     result = []
     loaded, _ = ttr.get_users(ids)
     if len(_):
-        log.error('we have not loaded ids:\n%s'%', '.join(_))
+        log.error('we have not loaded ids:\n%s' % ', '.join(_))
     for user_data in set(loaded):
-        log.info('loaded user %s'%user_data.screen_name)
+        log.info('loaded user %s' % user_data.screen_name)
         persist.save_user(user_data)
         persist_messages(user_data)
         result.extend(get_user_relations(user_data, relation_type))
@@ -63,21 +73,32 @@ def persist_users_by_ids_and_retrieve_friends(ids, relation_type):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 3:
-        start_user_screen_name = sys.argv[1]
-        relation_type = sys.argv[2]
-    elif len(sys.argv) == 2:
-        start_user_screen_name = sys.argv[1]
-        relation_type = 'friends'
-    else:
-        print '''
-        usage: python walker_ttr.py <start_user_name> [<relation_type>] where
-        start_user_name - some user name which will start walk from
-        relation_type - can be [friends, followers], friends as default
-        '''
-        sys.exit(-2)
+    log.info('hello!')
+    import argparse
 
-    related_users_ids = persist_all_user_data_and_retrieve_friends_ids(start_user_screen_name, relation_type)
-    while 1:
-        related_users_ids = persist_users_by_ids_and_retrieve_friends(related_users_ids, relation_type)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-l', '--list', type=file, help='load list of user ids you must provide file of this list')
+    parser.add_argument('-u', '--user', help='load one user name')
+    parser.add_argument('-rt', '--relation_type',
+                        help='using specific relation type, as default using \'friends\', you can use \'followers\'', )
+    parser.add_argument('-d', '--depth', type=int,
+                        help='depth of social (friends and followers) and saving users relations', )
+    args = parser.parse_args()
+    if args.list:
+        with args.list as f:
+            users = [el.strip() for el in f.xreadlines()]
+    else:
+        users = [args.user] if args.user else []
+
+    relation_type = args.relation_type or relation_type
+    depth = args.depth or 1
+    log.info(
+        '\n-----------\nstart load from this users: \n%s \n\nwith relation type: %s\nwith depth: %s\n-------------' % (
+            '\n'.join(users), relation_type, depth))
+
+    for _ in range(args.depth or 1):
+        related_users = []
+        for user in users:
+            related_users.extend(persist_all_user_data_and_retrieve_friends_ids(user, relation_type))
+        users = list(set(related_users).difference(users))
 
