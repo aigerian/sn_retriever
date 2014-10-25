@@ -11,11 +11,11 @@ __author__ = '4ikist'
 
 import datetime
 import random
-from time import sleep
-
 import urlparse
-from lxml import html
 import requests
+
+from time import sleep
+from lxml import html
 
 
 comments_names = {'wall': {'cmd': 'wall', 'id': 'post'},
@@ -122,8 +122,6 @@ class AccessTokenHolder(object):
 
 
 class VK_API(API):
-    # __metaclass__ = Singleton
-
     def __init__(self, logins=None, auth=True, base_url='', ):
         self.log = properties.logger.getChild('VK_API')
         if auth:

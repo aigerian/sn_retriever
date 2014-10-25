@@ -1,3 +1,35 @@
+# Запускаемые комманды.
+Перед тем как запустить обработку с помощью какой-либо из walker"ов следует запустить его с параметром -h.
+Ничего страшного не произойдет, а программа напишет в понятном виде как ей пользоваться.
+
+## Параметры для walker_ttr
+```
+  -h, --help            show this help message and exit
+  -l LIST, --list LIST  load list of user ids you must provide file of this
+                        list
+  -u USER, --user USER  load one user name
+  -rt RELATION_TYPE, --relation_type RELATION_TYPE
+                        using specific relation type, as default using
+                        'friends', you can use 'followers'
+  -d DEPTH, --depth DEPTH
+                        depth of social (friends and followers) and saving
+                        users relations
+```
+
+## Параметры для walker_vk
+
+```
+  -h, --help            show this help message and exit
+  -l LIST, --list LIST  load list of user ids you must provide file of this
+                        list
+  -u USER, --user USER  load user id
+  -r, --recursive       will load social siblings of retrieved users
+```
+
+У обоих можно указать либо отдельного пользователя либо списком в предоставленном файле. 
+Следует обратить внимание на пользователей вконтакте - требуется именно идентификаторы пользователей. 
+
+
 # Инструкция
 0. Если уже имеются наработки и есть данные в БД, извлеченные при помощи walker_ttr то следует выполнить 
 

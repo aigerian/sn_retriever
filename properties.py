@@ -36,7 +36,7 @@ fb_user_pass = 'sederfes_fb#'
 # данные для твитера
 # linoleum2k12 / aspiranture_ttr!
 # sederfes / sederfes100500 / stack2008@gmail.com
-#pramen2 / sederfes100500 / pramen.toramen@gmail.com
+# pramen2 / sederfes100500 / pramen.toramen@gmail.com
 #kilogram_tabaka / sederfes100500 / sofia.bortnicova@gmail.com
 #ariantis_mar / sederfes100500 / ariantis.marcerinz@gmail.com
 
@@ -152,7 +152,7 @@ vk_access_credentials = {'client_id': '4544084',
 }
 #also...
 vk_edit_app_url = 'https://vk.com/editapp?id=3784486&section=options'
-
+vk_walker_threads_count = len(vk_logins)
 
 #настройки логирования
 log_file = os.path.join(module_path(), 'result.log')
@@ -168,7 +168,7 @@ logger.addHandler(ch)
 logging.getLogger('requests.packages.urllib3.connectionpool').propagate = False
 
 #данные для подключения к mongo (основная БД)
-db_port = 27018
+db_port = 27017
 db_host = 'localhost'
 db_name = 'vk'
 db_user = '4ikist'

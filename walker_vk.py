@@ -1,5 +1,6 @@
 # coding=utf-8
 from Queue import Queue, Empty
+import argparse
 
 import sys
 from datetime import datetime
@@ -10,7 +11,8 @@ from time import sleep
 from contrib.api.vk.vk_entities import VK_APIUser, rel_types_groups
 from contrib.api.vk.vk_execute import VK_API_Execute
 from contrib.db.database_engine import Persistent
-from properties import logger, vk_logins
+from properties import logger, vk_logins, vk_walker_threads_count
+import properties
 
 
 __author__ = '4ikist'
@@ -66,11 +68,11 @@ def persist_content_result(content_result, user_id, persist):
     log.info("found %s related and not loaded groups" % len(not_loaded_groups))
     comments = content_result.comments
     persist.save_messages(comments)
-    log.info('saved %s comments'%len(comments))
+    log.info('saved %s comments' % len(comments))
 
     content = content_result.content
     persist.save_content_objects(content)
-    log.info('saved %s content objects'%len(content))
+    log.info('saved %s content objects' % len(content))
 
     return not_loaded_users + not_loaded_groups
 
@@ -112,7 +114,7 @@ class UserRetriever(threading.Thread):
 
 
 class UserSaver(threading.Thread):
-    def __init__(self, persist, data_queue, ids_queue, data_event, ids_event):
+    def __init__(self, persist, data_queue, ids_queue, data_event, ids_event, recursive=False):
         super(UserSaver, self).__init__()
         self.name = 'saver'
         self.persist = persist
@@ -120,6 +122,7 @@ class UserSaver(threading.Thread):
         self.data_queue = data_queue
         self.not_empty_data_queue = data_event
         self.not_empty_ids_queues = ids_event
+        self.recursive = recursive
 
     def run(self):
         while 1:
@@ -129,29 +132,36 @@ class UserSaver(threading.Thread):
                     related_ids = saving_objects_data(data, self.persist)
                     if not related_ids or not isinstance(related_ids, list):
                         continue
-
-                    for el in related_ids:
-                        self.ids_queue.put(el)
+                    if self.recursive:
+                        for el in related_ids:
+                            self.ids_queue.put(el)
                 else:
                     self.not_empty_data_queue.wait(1)
                     continue
             with self.not_empty_ids_queues:
                 self.not_empty_ids_queues.notifyAll()
 
+
 if __name__ == '__main__':
-    try:
-        count_processes = int(sys.argv[2])
-        start_user_identical = sys.argv[1]
-    except:
-        print "usage is:\nwalker_vk.py <start_user_id_or_screen_name> <count_threads>"
-        print "now you forgot last parameter"
-        sys.exit(0)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-l', '--list', type=file, help='load list of user ids you must provide file of this list')
+    parser.add_argument('-u', '--user', help='load user id')
+    parser.add_argument('-r', '--recursive', help='will load social siblings of retrieved users', action='store_true')
+    args = parser.parse_args()
 
     queue_data = Queue()
     queue_ids = Queue()
     is_ids_empty = threading.Condition()
     is_data_empty = threading.Condition()
-    queue_ids.put(start_user_identical)
+    if args.list:
+        with args.list as user_list:
+            for line in user_list.xreadlines():
+                queue_ids.put(line.strip)
+    if args.user:
+        queue_ids.put(args.user)
+
+    count_processes = vk_walker_threads_count
     min_logins_at_process = len(vk_logins) / count_processes
     threads = []
     for el in xrange(count_processes):
@@ -164,7 +174,7 @@ if __name__ == '__main__':
         threads.append(p)
 
     persist = Persistent()
-    saver = UserSaver(persist, queue_data, queue_ids, is_data_empty, is_ids_empty)
+    saver = UserSaver(persist, queue_data, queue_ids, is_data_empty, is_ids_empty, recursive=args.recursive)
     saver.start()
     threads.append(saver)
     for el in threads:

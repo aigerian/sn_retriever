@@ -1,10 +1,13 @@
-__author__ = '4ikist'
 from distutils.core import setup
-#import py2exe
 
 setup(
-    windows=[{'script': 'client.py'}],
-    options={
-        'py2exe': {'includes': ['lxml.etree', 'lxml._elementpath', 'gzip', 'facebook', 'requests', 'pika'],
-                   'compressed': True}}, requires=['bson']
+    name='ttr_retr',
+    version='2.0.1',
+    packages=['', 'birdy', 'contrib', 'contrib.db', 'contrib.api', 'contrib.api.vk', 'contrib.core',
+              'contrib.core.latane', 'contrib.core.graph_algorithm', 'sandbox', 'sandbox.feed', 'flask_server'],
+    url='',
+    license='MIT',
+    author='4ikist',
+    author_email='',
+    description=''
 )
