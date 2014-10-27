@@ -11,6 +11,7 @@ from time import sleep
 from contrib.api.vk.vk_entities import VK_APIUser, rel_types_groups
 from contrib.api.vk.vk_execute import VK_API_Execute
 from contrib.db.database_engine import Persistent
+from contrib.utils import SocialDataStreamer
 from properties import logger, vk_logins, vk_walker_threads_count
 import properties
 
@@ -21,7 +22,14 @@ log = logger.getChild('walker_ttr')
 
 
 def retrieving_objects_data(user_id, vk):
-    el = int(user_id)
+    if isinstance(user_id, (str, unicode)):
+        if user_id.isdigit():
+            el = int(user_id)
+        else:
+            user = vk.get_user_info(user_id)
+            el = user.sn_id
+    else:
+        el = user_id
     if el > 0:
         result = vk.get_user_data(el)
     else:
@@ -98,6 +106,7 @@ class UserRetriever(threading.Thread):
         self.not_empty_ids_queues = ids_events
 
     def run(self):
+        trying_count = 5
         while 1:
             with self.not_empty_ids_queues:
                 if not self.ids_queue.empty():
@@ -107,6 +116,9 @@ class UserRetriever(threading.Thread):
                     self.data_queue.put(users_data)
                 else:
                     self.not_empty_ids_queues.wait(1)
+                    trying_count -= 1
+                    if trying_count < 1:
+                        break
                     continue
 
             with self.not_empty_data_queue:
@@ -135,6 +147,8 @@ class UserSaver(threading.Thread):
                     if self.recursive:
                         for el in related_ids:
                             self.ids_queue.put(el)
+                    else:
+                        break
                 else:
                     self.not_empty_data_queue.wait(1)
                     continue
@@ -148,6 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--list', type=file, help='load list of user ids you must provide file of this list')
     parser.add_argument('-u', '--user', help='load user id')
     parser.add_argument('-r', '--recursive', help='will load social siblings of retrieved users', action='store_true')
+    parser.add_argument('-v', '--visualise', help='will sending to gephi data', action='store_true')
     args = parser.parse_args()
 
     queue_data = Queue()
@@ -173,11 +188,16 @@ if __name__ == '__main__':
         p.start()
         threads.append(p)
 
-    persist = Persistent()
+    if args.visualise:
+        persist = SocialDataStreamer()
+    else:
+        persist = Persistent()
+
     saver = UserSaver(persist, queue_data, queue_ids, is_data_empty, is_ids_empty, recursive=args.recursive)
     saver.start()
     threads.append(saver)
     for el in threads:
+        print el
         el.join()
 
 

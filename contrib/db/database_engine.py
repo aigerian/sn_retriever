@@ -225,6 +225,8 @@ class RedisBaseMixin(object):
         return self.form_relations_list_name(from_, to_)
 
     def save_relations(self, from_, to_, rel_type):
+        if not to_:
+            return None, None
         list_name = self.form_relations_list_name(from_, rel_type)
         list_out_name = self.form_relations_list_out_name(to_, rel_type)
         if isinstance(to_, list):
@@ -412,10 +414,6 @@ class Persistent(object):
         self.worker.start()
         self.worker.join()
 
-    @stopwatch
-    def save_deferred(self, objects):
-        self.redis_client_deferred.publish('deferred_channel', pickle.dumps(objects, pickle.HIGHEST_PROTOCOL))
-
     def add_deleted_user(self, user_sn_id):
         found = self.deleted_users.find_one({'sn_id': user_sn_id})
         if not found:
@@ -548,30 +546,6 @@ class Persistent(object):
         if message:
             return APIMessage(message)
 
-    # def __form_owner_ref(self, users_object):
-    # if not isinstance(users_object.get('owner'), DBRef):
-    # try:
-    # owner_sn_id = int(users_object.get('owner').get('sn_id'))
-    # except ValueError:
-    # owner_sn_id = users_object.get('owner').get('sn_id')
-    # if owner_sn_id is None:
-    # raise DataBaseMessageException('Owner sn_id can not be None')
-    # if users_object.get('owner').get('type') == 'group':
-    # group = self.get_social_object(owner_sn_id)
-    # if group:
-    # group_ref = DBRef(self.social_objects, group['_id'])
-    # users_object['owner'] = group_ref
-    # else:
-    # user = self.get_user(sn_id=owner_sn_id)
-    # if user:
-    # user_ref = self.get_user_ref(user)
-    # users_object['owner'] = user_ref
-    # users_object['group_id'] = owner_sn_id
-    # else:
-    # self.not_loaded_users.save({'_id': owner_sn_id})
-    # # raise DataBaseMessageException('No user for this sn_id [%s]' % user_sn_id)
-    # users_object['user_id'] = owner_sn_id
-    # @stopwatch
     def save_message(self, message):
         """
         saving message. message must be a dict with field user, this field must be a DbRef or dict ith sn_id of some user in db
@@ -584,7 +558,7 @@ class Persistent(object):
         self.cache.add_to_cache(message['sn_id'], str(result))
         return result
 
-    @stopwatch
+    # @stopwatch
     def save_messages(self, objects):
         for el in objects:
             self.save_message(el)
@@ -623,7 +597,7 @@ class Persistent(object):
         self.cache.add_to_cache(s_object['sn_id'], str(result))
         return result
 
-    @stopwatch
+    # @stopwatch
     def save_content_objects(self, content_objects):
         for el in content_objects:
             self.save_content_object(el)

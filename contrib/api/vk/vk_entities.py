@@ -50,7 +50,6 @@ def _process_text_fields(data):
                 log.warn("error in processing text data: %s\ntext data: %s" % (e, data[key]))
 
 
-
 class VK_APIUser(APIUser):
     def __init__(self, data_dict):
         if data_dict is None:
@@ -75,6 +74,7 @@ class VK_APIUser(APIUser):
             counters = data_dict.get('counters')
             data_dict['followers_count'] = counters['followers']
             data_dict['friends_count'] = counters['friends']
+        data_dict['statuses_count'] = data_dict.pop('wall_count',0)
         if 'screen_name' not in data_dict:
             data_dict['screen_name'] = data_dict.get('screen_name') or data_dict.pop('domain', None) or data_dict.get(
                 'sn_id')
@@ -178,7 +178,7 @@ class ContentResult(object):
         return self.__add_object(APIContentObject, self.content, content_objects)
 
     def get_content_to_persist(self):
-        return self.comments+self.content
+        return self.comments + self.content
 
     @property
     def content(self):

@@ -189,6 +189,8 @@ queue_name = 'sn_queue'
 #место где лежит прокси лист
 local_proxy_list = os.path.join(os.path.dirname(__file__), 'proxy_list')
 
+#
+gephi_master_url = 'http://localhost:8070/workspace0?operation=updateGraph'
 
 ###############################################
 #время в течении которого не будет обновлятся данные в БД (в секундах)
