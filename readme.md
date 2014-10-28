@@ -33,7 +33,11 @@
 Для отправки в Gephi потребуется, во-первых, настроить его. Это легко. Нужно скачать [его](http://gephi.github.io/) и установив его 
 поставить плагин GraphStreaming: Сервис -> Подключаемые модули -> Доступные подключаемые модули  
 ![alt скрин установки плагина](https://github.com/AlexeyProskuryakov/sn_retriever/blob/master/visualisation_man/choose_plugin.jpg "Выберите Graph Stream") 
+
 Установив этот плагин переходим в его вкладку и включаем сервер принимающие данные: Окно -> Streaming
+Создаем новый проект, для каждого шага визуализации (для каждого запуска walker), иначе данные будут накапливаться.  
+И включаем сервер.
+
 ![alt скрин включения сервера](https://github.com/AlexeyProskuryakov/sn_retriever/blob/master/visualisation_man/start_plugin.jpg "Нажмите Start для старта сервера")
 
 Во-вторых, следует запустить walker'a (и vk и ttr) с параметром -v либо --visualise
