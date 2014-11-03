@@ -1,7 +1,4 @@
 # coding=utf-8
-import datetime
-from pip._vendor.requests import RequestException
-
 from contrib.db.database_engine import Persistent
 import properties
 
