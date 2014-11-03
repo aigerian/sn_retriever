@@ -326,6 +326,11 @@ class TTR_APIUser(APIUser):
 
 
 class TTR_APIMessage(APIMessage):
+    langs = {'uk': 'english', 'en': 'english', 'ru': 'russian'}
+
+    def __get_lang(self, lang):
+        return self.langs.get(lang, None)
+
     def __init__(self, data_dict):
         data = dict(data_dict)
         data['source'] = 'ttr'
@@ -340,6 +345,7 @@ class TTR_APIMessage(APIMessage):
         data['owner'] = user
         data['sn_id'] = data.pop('id')
         data['created_at'] = dtprsr.parse(data['created_at'])
+        data['language'] = self.__get_lang(data.pop('lang',None))
 
         delete_fields_with_prefix(data, ('_str'), l=False, r=True)
 
@@ -365,7 +371,7 @@ if __name__ == '__main__':
     # user = api.get_user(user_id=str(user_id))
     # if user:
     # db.save_user(user)
-    #         db.save_duty({'work': 'medvedev_get_followers', 'cursor': cursor}, 'medvedev_get_followers')
+    # db.save_duty({'work': 'medvedev_get_followers', 'cursor': cursor}, 'medvedev_get_followers')
     #
     #
     # t_follwers = threading.Thread(target=found_user, kwargs={'user_ids': followers_mdv, 'api': api, 'db': db})
