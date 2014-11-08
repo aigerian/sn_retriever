@@ -1,8 +1,5 @@
 # coding=utf-8
-import datetime
-from contrib.api.vk.vk_entities import ContentResult, VK_APIContentObject, VK_APIMessage, VK_APISocialObject, \
-    rel_types_groups, \
-    unix_time
+from contrib.api.vk.vk_entities import ContentResult, VK_APIContentObject, VK_APIMessage, VK_APISocialObject, unix_time
 
 import properties
 

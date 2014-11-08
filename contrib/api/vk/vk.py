@@ -1,7 +1,7 @@
 # coding=utf-8
 import json
-from contrib.api.entities import API, APIException, APISocialObject, APIResponseException
-from contrib.api.vk.utils import group_retrieve, Singleton
+from contrib.api.entities import API, APIException, APIResponseException
+from contrib.api.vk.utils import group_retrieve
 from contrib.api.vk.vk_entities import VK_APIUser, rel_types_groups, ContentResult, VK_APIMessage, unix_time, \
     VK_APIContentObject, get_mentioned, VK_APISocialObject
 import properties

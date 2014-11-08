@@ -14,7 +14,8 @@ import properties
 __author__ = '4ikist'
 
 rel_types_groups = ['member', 'admin', 'subscribe', 'request', 'invitation']
-rel_types_users = ['friend', 'follower', 'like', 'comment', 'mentions', 'board_create', 'board_comment']
+rel_types_user = ['friend', 'follower']
+rel_types_data = ['like', 'comment', 'mentions', 'board_create', 'board_comment']
 
 iterated_counters = {'subscriptions': 200,
                      'followers': 1000,
@@ -123,6 +124,8 @@ class VK_APISocialObject(APISocialObject):
 
 
 class ContentResult(object):
+    onced_types = rel_types_groups + rel_types_user
+
     def __init__(self):
         self._content = []
         # {from:{type1:[to1,to2,to3], type2:[to1,to2,to3]}}
@@ -156,9 +159,8 @@ class ContentResult(object):
         :param relation:
         :return:
         """
-        if relation[1] in rel_types_groups:
-            if relation[1] not in rel_types_groups and relation[2] in self._relations[relation[0]][relation[1]]:
-                return
+        if relation[1] in self.onced_types and relation[2] in self._relations[relation[0]][relation[1]]:
+            return
         self._relations[relation[0]][relation[1]].append(relation[2])
 
     def add_relations(self, relation_objects):
