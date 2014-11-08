@@ -190,6 +190,8 @@ class TTR_API(object):
             return result
 
     def get_user(self, **kwargs):
+        if 'sn_id' in kwargs:
+            kwargs['user_id'] = kwargs.pop('sn_id')
         response = self.get(self.client.api.users.show.get, **kwargs)
         if response:
             return self._form_user(response.data)
@@ -345,7 +347,7 @@ class TTR_APIMessage(APIMessage):
         data['owner'] = user
         data['sn_id'] = data.pop('id')
         data['created_at'] = dtprsr.parse(data['created_at'])
-        data['language'] = self.__get_lang(data.pop('lang',None))
+        data['language'] = self.__get_lang(data.pop('lang', None))
 
         delete_fields_with_prefix(data, ('_str'), l=False, r=True)
 

@@ -63,7 +63,7 @@ def persist_content_result(content_result, user_id, persist):
         if not persist.is_social_object_saved(group_id):
             not_loaded_groups.append(-abs(group_id))
 
-    for from_id, types_and_tos in content_result.get_relations().iteritems():
+    for from_id, types_and_tos in content_result.get_all_relations().iteritems():
         for rel_type, tos in types_and_tos.iteritems():
             for to in tos:
                 if rel_type not in rel_types_groups:  # если связь не с группой

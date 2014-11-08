@@ -168,6 +168,7 @@ def get_params_for_db(user):
 
 
 class TTR_Characterisitcs(BaseCharacteristics):
+    #todo use_as_cache is bad approach
     def __init__(self, database, api):
         self.database = database
         self.api = api

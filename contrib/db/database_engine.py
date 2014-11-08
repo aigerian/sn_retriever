@@ -207,19 +207,19 @@ class RedisGraphPersistent(nx.DiGraph):
 
 
 class RedisBaseMixin(object):
-    def __init__(self, truncate=False, db_num=0):
-        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=db_num)
+    def __init__(self, truncate=False, host=None, port=None, db_num=0):
+        self.engine = redis.StrictRedis(host=host or redis_host, port=port or redis_port, db=db_num)
         if truncate:
             self.engine.flushdb()
 
 
     def form_relations_list_name(self, from_, type_):
-        return '%s:%s' % (from_, type_)
+        return '%s:>:%s' % (from_, type_)
 
     def form_relations_list_out_name(self, from_, type_):
         if isinstance(from_, list):
             return [self.form_relations_list_out_name(el, type_) for el in from_]
-        return '<%s:%s' % (from_, type_)
+        return '%s:<:%s' % (from_, type_)
 
     def form_path_list_name(self, from_, to_):
         return self.form_relations_list_name(from_, to_)
@@ -234,15 +234,21 @@ class RedisBaseMixin(object):
                 log.debug("save: %s:%s " % (i * redis_batch_size, (i + 1) * redis_batch_size))
                 self.engine.rpush(list_name,
                                   *to_[i * redis_batch_size:(i + 1) * redis_batch_size])
-                for el in list_out_name:
-                    self.engine.rpush(el, from_)
+            for el in list_out_name:
+                self.engine.rpush(el, from_)
         else:
             self.engine.rpush(list_name, to_)
             self.engine.rpush(list_out_name, from_)
         return list_name, list_out_name
 
+    def get_relations_out(self, from_, rel_type):
+        return self.engine.lrange(self.form_relations_list_name(from_, rel_type), 0, -1)
 
-    def get_relations(self, from_, rel_type, backwards=True):
+    def get_relations_in(self, to_, rel_type):
+        return self.engine.lrange(self.form_relations_list_out_name(to_, rel_type), 0, -1)
+
+
+    def get_all_relations(self, from_, rel_type, backwards=True):
         out_result = []
         if backwards:
             out_result = self.engine.lrange(self.form_relations_list_out_name(from_, rel_type), 0, -1)
@@ -285,8 +291,8 @@ class RedisBaseMixin(object):
 
 
 class RedisCacheMixin(object):
-    def __init__(self, truncate, db_num=1):
-        self.engine = redis.StrictRedis(host=redis_host, port=redis_port, db=db_num)
+    def __init__(self, truncate, host=None, port=None, db_num=1):
+        self.engine = redis.StrictRedis(host=host or redis_host, port=port or redis_port, db=db_num)
         if truncate:
             self.engine.flushdb()
 
@@ -305,26 +311,6 @@ class RedisCacheMixin(object):
         self.engine.incrby(key, by)
 
 
-class PersistentDeferredWorker(threading.Thread):
-    def __init__(self, persist):
-        super(PersistentDeferredWorker, self).__init__()
-        r_client = redis.StrictRedis()
-        self.pubsub = r_client.pubsub()
-        self.pubsub.subscribe(**{'deferred_channel': self.handle_message})
-        self.persist = persist
-
-    def handle_message(self, message):
-        object = pickle.loads(message['data'])
-        if not isinstance(object, list):
-            object = [object]
-        self.persist.save_object_batch(object)
-
-
-    def run(self):
-        for item in self.pubsub.listen():
-            pass
-
-
 class Persistent(object):
     def __create_index(self, collection, field_or_list, direction, unique, **index_kwargs):
         index_info = collection.index_information()
@@ -341,11 +327,12 @@ class Persistent(object):
         else:
             collection.ensure_index(index_param, unique=unique, **index_kwargs)
 
-    def __init__(self, truncate=False):
+    def __init__(self, truncate=False, host=None, port=None, name=None, r_host=None, r_port=None, r_dbnum=0):
         log.info("Start persistence engine with truncate: %s" % truncate)
-        mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (db_user, db_password, db_host, db_port, db_name)
+        self.mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (
+            db_user, db_password, host or db_host, port or db_port, name or db_name)
         try:
-            self.mongo_engine = MongoClient(mongo_uri)
+            self.mongo_engine = MongoClient(self.mongo_uri)
         except ConfigurationError as e:
             self.mongo_engine = MongoClient(db_host, db_port)
         except ConnectionFailure as e:
@@ -358,7 +345,7 @@ class Persistent(object):
 
         self.messages = self.database['messages']
         self.__create_index(self.messages, 'sn_id', ASCENDING, True)
-        self.__create_index(self.messages, 'owner', ASCENDING, False)
+        self.__create_index(self.messages, 'owner.sn_id', ASCENDING, False)
         self.__create_index(self.messages, 'source', ASCENDING, False)
         self.__create_index(self.messages, 'text', 'text', False, language_override='lang')
 
@@ -394,10 +381,10 @@ class Persistent(object):
         self.deleted_users = self.database['deleted_users']
         self.__create_index(self.deleted_users, 'sn_id', ASCENDING, True)
 
-        self.redis = RedisBaseMixin(truncate)
+        self.redis = RedisBaseMixin(truncate, host=r_host, port=r_port, db_num=r_dbnum)
         self.redis_client_deferred = redis.StrictRedis(host=redis_host, port=redis_port, db=2)
 
-        self.cache = RedisCacheMixin(truncate=True)
+        self.cache = RedisCacheMixin(truncate=True, host=r_host, port=r_port)
 
         if truncate:
             self.users.remove()
@@ -407,12 +394,6 @@ class Persistent(object):
             self.relations_metadata.remove()
             self.changes.remove()
             self.deleted_users.remove()
-
-    def start_listen_deferred_objects(self):
-        log.info('starting listening objects for deferred saving')
-        self.worker = PersistentDeferredWorker(self)
-        self.worker.start()
-        self.worker.join()
 
     def add_deleted_user(self, user_sn_id):
         found = self.deleted_users.find_one({'sn_id': user_sn_id})
@@ -458,7 +439,7 @@ class Persistent(object):
         for el in users:
             yield APIUser(el)
 
-    def get_user(self, _id=None, sn_id=None, screen_name=None, use_as_cache=False):
+    def get_user(self, _id=None, sn_id=None, screen_name=None):
         """
         finding user by id in db or social net id or screen_name
         if use_as_cache - returning none if user update_date is out of date
@@ -475,8 +456,6 @@ class Persistent(object):
         else:
             return None
         user = self.users.find_one(request_params)
-        if use_as_cache and user and (datetime.now() - user.get('update_date')).seconds > user_cache_time:
-            return None
         if user:
             return APIUser(user)
 
@@ -535,14 +514,12 @@ class Persistent(object):
             yield APIMessage(el)
 
     def get_message_last(self, user):
-        result = list(self.messages.find({'user.$id': user.get('_id')}).sort('created_at', -1).limit(1))
+        result = list(self.messages.find({'owner.sn_id': user.sn_id}).sort('created_at', -1).limit(1))
         if len(result):
             return APIMessage(result[0])
 
-    def get_message(self, sn_id, use_as_cache=False):
+    def get_message(self, sn_id, ):
         message = self.messages.find_one({'sn_id': sn_id})
-        if use_as_cache and message and (datetime.now() - message.get('update_date')).seconds > message_cache_time:
-            return None
         if message:
             return APIMessage(message)
 
@@ -637,6 +614,12 @@ class Persistent(object):
         # self.update_relations_metadata(list_out_name)
         # self.update_relations_metadata(list_name)
 
+    def get_related_from(self, from_id, relation_type):
+        return [int(el) for el in self.redis.get_relations_out(from_id, rel_type=relation_type)]
+
+    def get_related_to(self, to_id, relation_type):
+        return [int(el) for el in self.redis.get_relations_in(to_id, relation_type)]
+
     def remove_relation(self, from_id, to_id, relation_type):
         list_name = self.redis.remove_relation(from_id, relation_type, to_id)
         # self.update_relations_metadata(list_name)
@@ -659,9 +642,9 @@ class Persistent(object):
         if isinstance(relation_type, list):
             refs = []
             for relation_type_element in relation_type:
-                refs.extend(self.redis.get_relations(from_id, relation_type_element, backwards=backwards))
+                refs.extend(self.redis.get_all_relations(from_id, relation_type_element, backwards=backwards))
         else:
-            refs = self.redis.get_relations(from_id, relation_type)
+            refs = self.redis.get_all_relations(from_id, relation_type)
         result = []
         for el in refs:
             if only_sn_ids:
@@ -674,8 +657,8 @@ class Persistent(object):
                 result.append(result_element.get(result_key))
         return result
 
-    def get_relations_count(self, from_id, relations_type):
-        return self.redis.get_count(from_id, relations_type)
+    def get_relations_count(self, from_id, relations_type, backwards=False):
+        return self.redis.get_count(from_id, relations_type, backwards)
 
     def get_relations_update_time(self, from_id, relation_type):
         result = self.relations_metadata.find_one(
@@ -711,8 +694,6 @@ class Persistent(object):
         log.debug('saving object: [%s]\n%s' % (object_data.get('screen_name') or sn_id, object_data))
         founded_object = sn_object.find_one({'sn_id': sn_id})
         if founded_object:
-            # founded_user = dict(founded_user)
-            # founded_user.update(object_data)
             founded_object.update(object_data)
             sn_object.save(founded_object)
             result = founded_object.get('_id')

@@ -89,6 +89,10 @@ class APIContentObject(dict):
     def sn_id(self):
         return self.get('sn_id')
 
+    @property
+    def update_date(self):
+        return self.get('update_date')
+
 
 
 class APISocialObject(APIContentObject):

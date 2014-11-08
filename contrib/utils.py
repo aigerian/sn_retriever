@@ -54,11 +54,11 @@ class GephiStreamer(object):
             self.log.error('can not connect to gephi')
 
     def add_node(self, node_data):
-        '''
+        """
         Must be object with sn_id and name properties
         :param node_data:
         :return:
-        '''
+        """
         if node_data.sn_id not in self.nodes:
             self.__send({'an': {
                 node_data.sn_id: {'label': node_data['screen_name'],
@@ -107,9 +107,9 @@ class GephiStreamer(object):
 
 
 class SocialDataStreamer(Persistent):
-    def __init__(self):
+    def __init__(self, host=None, port=None, name=None, r_host=None, r_port=None, r_dbnum=0):
         self.streamer = GephiStreamer()
-        super(SocialDataStreamer, self).__init__()
+        super(SocialDataStreamer, self).__init__(False, host, port, name, r_host, r_port, r_dbnum)
 
     def save_relation(self, from_id, to_id, relation_type):
         super(SocialDataStreamer, self).save_relation(from_id, to_id, relation_type)

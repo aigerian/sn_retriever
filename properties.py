@@ -174,7 +174,7 @@ db_name = 'vk'
 db_user = '4ikist'
 db_password = 'sederfes'
 
-#данные для подключения redis (связи)
+#данные для подключения redis (связи, кэш)
 redis_host = '127.0.0.1'
 redis_port = 6379
 redis_batch_size = 185000
@@ -190,7 +190,7 @@ queue_name = 'sn_queue'
 local_proxy_list = os.path.join(os.path.dirname(__file__), 'proxy_list')
 
 #
-gephi_master_url = 'http://localhost:8070/workspace0?operation=updateGraph'
+gephi_master_url = 'http://localhost:8080/workspace0?operation=updateGraph'
 
 ###############################################
 #время в течении которого не будет обновлятся данные в БД (в секундах)
