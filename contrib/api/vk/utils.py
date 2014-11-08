@@ -200,7 +200,7 @@ def group_retrieve(group_elements, user_id):
     content_result = ContentResult()
     for el in group_elements:
         group = VK_APISocialObject(el)
-        content_result.add_content(group)
+        content_result.add_group(group)
         content_result.add_relations((user_id, 'member', group.sn_id))
     return content_result
 
@@ -219,5 +219,5 @@ def subscriptions_retrieve(subscription_elements, user_id):
             else:
                 content_result.add_relations((user_id, 'subscribe', el['id']))
             page = VK_APISocialObject(el)
-            content_result.add_content(page)
+            content_result.add_group(page)
     return content_result

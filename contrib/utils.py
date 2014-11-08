@@ -82,7 +82,8 @@ class GephiStreamer(object):
         :return:
         """
         if from_node_id not in self.nodes:
-            return
+            self.__send({'an': {from_node_id: {'label': from_node_id, 'not_loaded': True}}})
+            self.nodes[from_node_id] = None
         if to_node_id not in self.nodes:
             self.__send({'an': {to_node_id: {'label': to_node_id, 'not_loaded': True}}})
             self.nodes[to_node_id] = None
@@ -122,3 +123,19 @@ class SocialDataStreamer(Persistent):
     def save_user(self, user):
         super(SocialDataStreamer, self).save_user(user)
         self.streamer.add_node(user)
+
+
+if __name__ == '__main__':
+    sds = SocialDataStreamer()
+    sds.save_relation(1, 2, 'test')
+    sds.save_relation(1, 3, 'test')
+    sds.save_relation(2, 1, 'test')
+    sds.save_relation(3, 1, 'test')
+    sds.save_relation(4, 1, 'test')
+    sds.save_relation(5, 1, 'test')
+    from contrib.api.entities import APIUser
+    sds.save_user(APIUser({'sn_id':1, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'one'}))
+    sds.save_user(APIUser({'sn_id':2, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'two'}))
+    sds.save_user(APIUser({'sn_id':3, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'three'}))
+    sds.save_user(APIUser({'sn_id':4, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'four'}))
+    sds.save_user(APIUser({'sn_id':5, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'five'}))

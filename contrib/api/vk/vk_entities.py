@@ -74,7 +74,7 @@ class VK_APIUser(APIUser):
             counters = data_dict.get('counters')
             data_dict['followers_count'] = counters['followers']
             data_dict['friends_count'] = counters['friends']
-        data_dict['statuses_count'] = data_dict.pop('wall_count',0)
+        data_dict['statuses_count'] = data_dict.pop('wall_count', 0)
         if 'screen_name' not in data_dict:
             data_dict['screen_name'] = data_dict.get('screen_name') or data_dict.pop('domain', None) or data_dict.get(
                 'sn_id')
@@ -128,6 +128,7 @@ class ContentResult(object):
         # {from:{type1:[to1,to2,to3], type2:[to1,to2,to3]}}
         self._relations = defaultdict(partial(defaultdict, list))
         self._comments = []
+        self._groups = []
 
     def __add_object(self, object_type, object_acc, object):
         if isinstance(object, list):
@@ -172,13 +173,16 @@ class ContentResult(object):
             self.__add_relation(relation_objects)
 
     def add_comments(self, comments):
-        return self.__add_object(APIMessage, self.comments, comments)
+        return self.__add_object(APIMessage, self._comments, comments)
 
     def add_content(self, content_objects):
-        return self.__add_object(APIContentObject, self.content, content_objects)
+        return self.__add_object(APIContentObject, self._content, content_objects)
+
+    def add_group(self, social_objects):
+        return self.__add_object(APISocialObject, self._groups, social_objects)
 
     def get_content_to_persist(self):
-        return self.comments + self.content
+        return self.comments + self.content + self.groups
 
     @property
     def content(self):
@@ -199,6 +203,10 @@ class ContentResult(object):
     @property
     def comments(self):
         return self._comments
+
+    @property
+    def groups(self):
+        return self._groups
 
     def get_relations_with_type(self, relation_type, l=False, r=False):
         if not isinstance(relation_type, (list, tuple, set)):
@@ -221,6 +229,7 @@ class ContentResult(object):
         if isinstance(other, self.__class__) or isinstance(self, other.__class__):
             self._content += other._content
             self._comments += other._comments
+            self._groups += other._groups
             self.__concatenate_relations(other._relations)
             return self
         else:

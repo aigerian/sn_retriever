@@ -59,6 +59,7 @@ class ContentResultIntelligentRelations(ContentResult):
             self.add_comments(other.comments)
             self.add_content(other.content)
             self.add_relations(other.relations)
+            self.add_group(other.groups)
             return self
         raise ValueError('other is not my classg')
 
@@ -390,6 +391,7 @@ class VK_API_Execute(VK_API):
         content_result = ContentResultIntelligentRelations(user_id)
         content_result += wall_retrieve(wall_acc)
         return content_result
+
 
 if __name__ == '__main__':
     vk = VK_API_Execute()

@@ -579,6 +579,8 @@ class Persistent(object):
         for el in content_objects:
             self.save_content_object(el)
 
+
+
     def get_last_content_of_user(self, user_id, content_type):
         result = list(self.content_objects.find(spec={'user_id': user_id, 'type': content_type}, limit=1,
                                                 sort=[('create_date', -1)]))

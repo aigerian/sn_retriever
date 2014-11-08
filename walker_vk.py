@@ -63,12 +63,13 @@ def persist_content_result(content_result, user_id, persist):
         if not persist.is_social_object_saved(group_id):
             not_loaded_groups.append(-abs(group_id))
 
-    for from_id, types_and_tos in content_result.get_all_relations().iteritems():
+    for from_id, types_and_tos in content_result.get_relations().iteritems():
         for rel_type, tos in types_and_tos.iteritems():
-            for to in tos:
-                if rel_type not in rel_types_groups:  # если связь не с группой
+            if rel_type not in rel_types_groups:  # если связь не с группой
+                for to in tos:
                     add_new_user(from_id), add_new_user(to)
-                elif rel_type in rel_types_groups:
+            elif rel_type in rel_types_groups:
+                for to in tos:
                     add_new_group(to)
             persist.save_relation(from_id, tos, rel_type)
 
@@ -82,6 +83,9 @@ def persist_content_result(content_result, user_id, persist):
     persist.save_content_objects(content)
     log.info('saved %s content objects' % len(content))
 
+    groups = content_result.groups
+    persist.save_social_objects(groups)
+    log.info('saved %s groups' % len(groups))
     return not_loaded_users + not_loaded_groups
 
 
@@ -163,18 +167,55 @@ if __name__ == '__main__':
     parser.add_argument('-u', '--user', help='load user id')
     parser.add_argument('-r', '--recursive', help='will load social siblings of retrieved users', action='store_true')
     parser.add_argument('-v', '--visualise', help='will sending to gephi data', action='store_true')
+
+    parser.add_argument('-tr', '--truncate_db', help='will truncate database !WARNING', action='store_true')
+    parser.add_argument('-mh', '--mongo_host', help='host of mongodb')
+    parser.add_argument('-mp', '--mongo_port', help='port of mongodb')
+    parser.add_argument('-mdn', '--mongo_database_name', help='database name of mongodb')
+    parser.add_argument('-rh', '--redis_host', help='host of redis')
+    parser.add_argument('-rp', '--redis_port', help='port of redis')
+    parser.add_argument('-rdn', '--redis_database_number', help='number of database in redis', type=int, default=0)
+
     args = parser.parse_args()
+    users = []
+    if args.list:
+        with args.list as user_list:
+            for line in user_list.xreadlines():
+                users.append(line.strip)
+    if args.user:
+        users.append(args.user)
+
+    if args.visualise:
+        persist = SocialDataStreamer(args.mongo_host, args.mongo_port, args.mongo_database_name, args.redis_host,
+                                     args.redis_port,
+                                     args.redis_database_number)
+    else:
+        persist = Persistent(args.truncate_db, args.mongo_host, args.mongo_port, args.mongo_database_name,
+                             args.redis_host,
+                             args.redis_port,
+                             args.redis_database_number)
+
+    log.info(
+        '\n-----------\n'
+        'start load from this users: \n'
+        '%s \n\n'
+        'recursive? : %s\n\n'
+        ''
+        'data save to: %s\n'
+        'relations save to: %s\n'
+        '-------------' % (
+            '\n'.join(users), args.recursive, persist.mongo_uri,
+            '%s:%s[%s]' % (args.redis_host or properties.redis_host,
+                           args.redis_port or properties.redis_port,
+                           args.redis_database_number or 0)))
 
     queue_data = Queue()
     queue_ids = Queue()
     is_ids_empty = threading.Condition()
     is_data_empty = threading.Condition()
-    if args.list:
-        with args.list as user_list:
-            for line in user_list.xreadlines():
-                queue_ids.put(line.strip)
-    if args.user:
-        queue_ids.put(args.user)
+
+    for el in users:
+        queue_ids.put(el)
 
     count_processes = vk_walker_threads_count
     min_logins_at_process = len(vk_logins) / count_processes
@@ -188,17 +229,13 @@ if __name__ == '__main__':
         p.start()
         threads.append(p)
 
-    if args.visualise:
-        persist = SocialDataStreamer()
-    else:
-        persist = Persistent()
-
     saver = UserSaver(persist, queue_data, queue_ids, is_data_empty, is_ids_empty, recursive=args.recursive)
     saver.start()
     threads.append(saver)
     for el in threads:
-        print el
+        log.info('wait for stop: %s' % el)
         el.join()
+        log.info('thread %s was stopped' % el)
 
 
 

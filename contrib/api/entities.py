@@ -1,3 +1,4 @@
+# coding=utf-8
 from datetime import datetime
 import logging
 from bson import DBRef
@@ -79,6 +80,9 @@ class APIResponseException(Exception):
 
 
 class APIContentObject(dict):
+    """
+    Сущность хранящая в себе некоторый контент (фотография, заметка, видео)
+    """
     def __init__(self, data_dict):
         super(APIContentObject, self).__init__(data_dict)
 
@@ -96,6 +100,9 @@ class APIContentObject(dict):
 
 
 class APISocialObject(APIContentObject):
+    '''
+    Сущность хранящая в себе некоторый социальнй объект (группа, страница, прочее)
+    '''
     def __init__(self, data_dict):
         super(APISocialObject, self).__init__(data_dict)
 
