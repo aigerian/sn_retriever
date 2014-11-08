@@ -33,9 +33,9 @@
 # Визуализация 
 Для отправки в Gephi потребуется сачала нстроить его. Это легко. Нужно скачать [его](http://gephi.github.io/) и установив его 
 поставить плагин GraphStreaming: Сервис -> Подключаемые модули -> Доступные подключаемые модули  
-![alt скрин установки плагина]() 
+![alt скрин установки плагина](https://github.com/AlexeyProskuryakov/sn_retriever/blob/master/visualisation_man/choose_plugin.jpg) 
 Установив этот плагин переходим в его вкладку и включаем сервер принимающие данные: Окно -> Streaming
-![alt скрин включения сервера]()
+![alt скрин включения сервера](https://github.com/AlexeyProskuryakov/sn_retriever/blob/master/visualisation_man/start_plugin.jpg)
 
 # Инструкция
 0. Если уже имеются наработки и есть данные в БД, извлеченные при помощи walker_ttr то следует выполнить 
