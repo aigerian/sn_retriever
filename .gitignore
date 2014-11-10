@@ -5,3 +5,5 @@ _dumps
 sn_retr_env
 dicts
 *.rdb
+*_nodes.csv
+*_relations.csv
