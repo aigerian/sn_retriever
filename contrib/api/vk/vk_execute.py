@@ -3,7 +3,7 @@ from datetime import datetime
 from contrib.api.entities import APIUser
 
 from contrib.api.vk.utils import photo_retrieve, photo_comments_retrieve, video_retrieve, wall_retrieve, note_retrieve, \
-    group_retrieve, subscriptions_retrieve, comments_retrieve, board_retrieve
+    group_retrieve, subscriptions_retrieve, comments_retrieve, board_retrieve, members_retrieve
 from contrib.api.vk.vk import VK_API
 from contrib.api.vk.vk_entities import ContentResult, get_mentioned, VK_APIUser, to_unix_time, VK_APISocialObject
 
@@ -97,6 +97,7 @@ class VK_API_Execute(VK_API):
                 "videos":API.video.get({"owner_id":-f_user.id, "count":200, "extended":1}),
                 "wall":API.wall.get({"owner_id":-f_user.id, "count":100}),
                 "boards":API.board.getTopics({"group_id":f_user.id, "count":1})
+                "members":API.groups.getMembers({"group_id":Args.group_id, "count":1000})
                 };
 
         :param group_id:
@@ -109,6 +110,8 @@ class VK_API_Execute(VK_API):
         content_result += video_retrieve(group_data['photo_comments'])
         content_result += photo_retrieve(group_data['photos'])
         content_result += wall_retrieve(group_data['wall'])
+        content_result += members_retrieve(group_data['members'], group.sn_id)
+
         return group, content_result
 
     def get_user_data(self, user_id):
@@ -354,7 +357,6 @@ class VK_API_Execute(VK_API):
         content_result = ContentResult()
         content_result.add_relations([(el, 'likes', user_id) for el in result_acc])
         return content_result
-
 
     def get_wall_data(self, user_id, since_date=None):
         """

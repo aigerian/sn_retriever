@@ -201,6 +201,11 @@ def group_retrieve(group_elements, user_id):
         content_result.add_relations((user_id, 'member', group.sn_id))
     return content_result
 
+def members_retrieve(members_object, group_id):
+    content_result = ContentResult()
+    for member_id in members_object.get('items', []):
+        content_result.add_relations((member_id, 'member', group_id))
+    return content_result
 
 def subscriptions_retrieve(subscription_elements, user_id):
     content_result = ContentResult()

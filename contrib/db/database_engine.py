@@ -328,9 +328,9 @@ class Persistent(object):
             collection.ensure_index(index_param, unique=unique, **index_kwargs)
 
     def __init__(self, truncate=False, host=None, port=None, name=None, r_host=None, r_port=None, r_dbnum=0):
-        log.info("Start persistence engine with truncate: %s" % truncate)
-        self.mongo_uri = 'mongodb://%s:%s@%s:%s/%s' % (
-            db_user, db_password, host or db_host, port or db_port, name or db_name)
+        database_name = name or db_name
+        self.mongo_uri = 'mongodb://%s:%s@%s:%s' % (
+            db_user, db_password, host or db_host, port or db_port)
         try:
             self.mongo_engine = MongoClient(self.mongo_uri)
         except ConfigurationError as e:
@@ -341,7 +341,14 @@ class Persistent(object):
         except Exception as e:
             log.exception(e)
 
-        self.database = self.mongo_engine[db_name]
+        self.database = self.mongo_engine[database_name]
+
+        log.info("Start persistence engine with truncate: %s \nAnd credentials: %s" % (
+            truncate,
+            '\nhost: %s\nport: %s\ndb_name: %s' % (
+                self.mongo_engine.host,
+                self.mongo_engine.port,
+                database_name)))
 
         self.messages = self.database['messages']
         self.__create_index(self.messages, 'sn_id', ASCENDING, True)
@@ -578,7 +585,6 @@ class Persistent(object):
     def save_content_objects(self, content_objects):
         for el in content_objects:
             self.save_content_object(el)
-
 
 
     def get_last_content_of_user(self, user_id, content_type):

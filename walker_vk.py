@@ -14,7 +14,7 @@ from contrib.db.database_engine import Persistent
 from contrib.utils import SocialDataStreamer
 from properties import logger, vk_logins, vk_walker_threads_count
 import properties
-
+import time
 
 __author__ = '4ikist'
 
@@ -45,6 +45,8 @@ def persist_content_result(content_result, user_id, persist):
     :param user_id: идентификатор пользователя которого сохраняем
     :return:
     """
+    start = time.time()
+
     if content_result is None:
         return
 
@@ -73,6 +75,9 @@ def persist_content_result(content_result, user_id, persist):
                     add_new_group(to)
             persist.save_relation(from_id, tos, rel_type)
 
+    stop = time.time()
+    log.info('was saved relations of %s at %s seconds'%(user_id,stop-start))
+
     log.info("found %s related and not loaded users" % len(not_loaded_users))
     log.info("found %s related and not loaded groups" % len(not_loaded_groups))
     comments = content_result.comments
@@ -86,16 +91,24 @@ def persist_content_result(content_result, user_id, persist):
     groups = content_result.groups
     persist.save_social_objects(groups)
     log.info('saved %s groups' % len(groups))
-    return not_loaded_users + not_loaded_groups
 
+    stop2 = time.time()
+
+    log.info('was saved content result of %s at %s seconds\nall save was: %s'%(user_id, stop2-stop, stop2-start))
+
+    return not_loaded_users + not_loaded_groups
 
 def saving_objects_data(users_data, persist):
     user, result_object = users_data
+    log.info('will save data for user: %s...' % user.sn_id)
     if isinstance(user, VK_APIUser):
         persist.save_user(user)
     else:
         persist.save_social_object(user)
+    start = time.time()
     related_users = persist_content_result(result_object, user.sn_id, persist)
+    stop = time.time()
+    log.info('was saved data for user: %s at: %s seconds' % (user.sn_id, stop - start))
     return related_users
 
 
@@ -114,9 +127,9 @@ class UserRetriever(threading.Thread):
         while 1:
             with self.not_empty_ids_queues:
                 if not self.ids_queue.empty():
-                    ids = self.ids_queue.get(block=False)
-                    users_data = retrieving_objects_data(ids, self.vk)
-                    log.info('%s was retrieved' % ids)
+                    user_id = self.ids_queue.get(block=False)
+                    users_data = retrieving_objects_data(user_id, self.vk)
+                    log.info('%s was retrieved' % user_id)
                     self.data_queue.put(users_data)
                 else:
                     self.not_empty_ids_queues.wait(1)
@@ -141,6 +154,7 @@ class UserSaver(threading.Thread):
         self.recursive = recursive
 
     def run(self):
+        trying_count = 5
         while 1:
             with self.not_empty_data_queue:
                 if not self.data_queue.empty():
@@ -155,6 +169,9 @@ class UserSaver(threading.Thread):
                         break
                 else:
                     self.not_empty_data_queue.wait(1)
+                    trying_count -= 1
+                    if trying_count < 1:
+                        break
                     continue
             with self.not_empty_ids_queues:
                 self.not_empty_ids_queues.notifyAll()
@@ -186,11 +203,18 @@ if __name__ == '__main__':
         users.append(args.user)
 
     if args.visualise:
-        persist = SocialDataStreamer(args.mongo_host, args.mongo_port, args.mongo_database_name, args.redis_host,
+        persist = SocialDataStreamer(args.truncate_db,
+                                     args.mongo_host,
+                                     args.mongo_port,
+                                     args.mongo_database_name,
+                                     args.redis_host,
                                      args.redis_port,
                                      args.redis_database_number)
     else:
-        persist = Persistent(args.truncate_db, args.mongo_host, args.mongo_port, args.mongo_database_name,
+        persist = Persistent(args.truncate_db,
+                             args.mongo_host,
+                             args.mongo_port,
+                             args.mongo_database_name,
                              args.redis_host,
                              args.redis_port,
                              args.redis_database_number)

@@ -61,16 +61,16 @@ class GephiStreamer(object):
         """
         if node_data.sn_id not in self.nodes:
             self.__send({'an': {
-                node_data.sn_id: {'label': node_data['screen_name'],
-                                  'timeline_count': node_data['statuses_count'],
-                                  'friends_count': node_data['friends_count'],
-                                  'followers_count': node_data['followers_count']}}})
+                node_data.sn_id: {'label': node_data.get('screen_name', ''),
+                                  'timeline_count': node_data.get('statuses_count', 0),
+                                  'friends_count': node_data.get('friends_count', 0),
+                                  'followers_count': node_data.get('followers_count', 0)}}})
         elif self.nodes[node_data.sn_id] is None:
             self.__send({'cn': {
-                node_data.sn_id: {'label': node_data['screen_name'],
-                                  'timeline_count': node_data['statuses_count'],
-                                  'friends_count': node_data['friends_count'],
-                                  'followers_count': node_data['followers_count'],
+                node_data.sn_id: {'label': node_data.get('screen_name', ''),
+                                  'timeline_count': node_data.get('statuses_count', 0),
+                                  'friends_count': node_data.get('friends_count', 0),
+                                  'followers_count': node_data.get('followers_count', 0),
                                   'not_loaded': False}}})
         self.nodes[node_data.sn_id] = node_data
 
@@ -88,7 +88,7 @@ class GephiStreamer(object):
             self.__send({'an': {to_node_id: {'label': to_node_id, 'not_loaded': True}}})
             self.nodes[to_node_id] = None
 
-        edge_id = "%s%s" % (from_node_id, to_node_id)
+        edge_id = "%s_%s" % (from_node_id, to_node_id)
         saved = self.edges.get(edge_id)
         if saved is None:
             self.edges[edge_id] = 1
@@ -99,7 +99,7 @@ class GephiStreamer(object):
                               'directed': True,
                               'weight': self.edges[edge_id],
                               'label': relation_type
-                    }
+                              }
                 }})
         else:
             saved += 1
@@ -108,9 +108,9 @@ class GephiStreamer(object):
 
 
 class SocialDataStreamer(Persistent):
-    def __init__(self, host=None, port=None, name=None, r_host=None, r_port=None, r_dbnum=0):
+    def __init__(self, truncate=False, host=None, port=None, name=None, r_host=None, r_port=None, r_dbnum=0):
         self.streamer = GephiStreamer()
-        super(SocialDataStreamer, self).__init__(False, host, port, name, r_host, r_port, r_dbnum)
+        super(SocialDataStreamer, self).__init__(truncate, host, port, name, r_host, r_port, r_dbnum)
 
     def save_relation(self, from_id, to_id, relation_type):
         super(SocialDataStreamer, self).save_relation(from_id, to_id, relation_type)
@@ -134,8 +134,14 @@ if __name__ == '__main__':
     sds.save_relation(4, 1, 'test')
     sds.save_relation(5, 1, 'test')
     from contrib.api.entities import APIUser
-    sds.save_user(APIUser({'sn_id':1, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'one'}))
-    sds.save_user(APIUser({'sn_id':2, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'two'}))
-    sds.save_user(APIUser({'sn_id':3, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'three'}))
-    sds.save_user(APIUser({'sn_id':4, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'four'}))
-    sds.save_user(APIUser({'sn_id':5, 'friends_count':1, 'statuses_count':1,'followers_count':1, 'screen_name':'five'}))
+
+    sds.save_user(
+        APIUser({'sn_id': 1, 'friends_count': 1, 'statuses_count': 1, 'followers_count': 1, 'screen_name': 'one'}))
+    sds.save_user(
+        APIUser({'sn_id': 2, 'friends_count': 1, 'statuses_count': 1, 'followers_count': 1, 'screen_name': 'two'}))
+    sds.save_user(
+        APIUser({'sn_id': 3, 'friends_count': 1, 'statuses_count': 1, 'followers_count': 1, 'screen_name': 'three'}))
+    sds.save_user(
+        APIUser({'sn_id': 4, 'friends_count': 1, 'statuses_count': 1, 'followers_count': 1, 'screen_name': 'four'}))
+    sds.save_user(
+        APIUser({'sn_id': 5, 'friends_count': 1, 'statuses_count': 1, 'followers_count': 1, 'screen_name': 'five'}))

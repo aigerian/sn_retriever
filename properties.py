@@ -130,12 +130,12 @@ vk_key = 'YcU5rO3vWTAUO0trVTS3'
 vk_app_name = 'vk_retr'
 
 vk_logins = ['+79811064022',
-             '+79060739957',
-             '+79138973664',
-             '+79060740391',
-             '+79516739528',
-             '+79043362166',
-             '+79043377563'
+             # '+79060739957',
+             # '+79138973664',
+             # '+79060740391',
+             # '+79516739528',
+             # '+79043362166',
+             # '+79043377563'
 ]
 
 vk_pass = 'sederfes100500'
@@ -171,8 +171,8 @@ logging.getLogger('requests.packages.urllib3.connectionpool').propagate = False
 db_port = 27017
 db_host = 'localhost'
 db_name = 'vk'
-db_user = '4ikist'
-db_password = 'sederfes'
+db_user = None #'4ikist'
+db_password = None #'sederfes'
 
 #данные для подключения redis (связи, кэш)
 redis_host = '127.0.0.1'
