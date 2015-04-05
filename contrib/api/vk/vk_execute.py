@@ -395,6 +395,46 @@ class VK_API_Execute(VK_API):
         return content_result
 
 
+    def get_group_members(self, group_id):
+        """
+        vk script:
+
+        var req_count = 25;
+        var comments = [];
+        var offset = 0;
+        var objects_per_turn = 1000;
+        if (Args.offset){
+         offset = parseInt(Args.offset);
+        }
+        while (1){
+         var response = API.groups.getMembers({"group_id":Args.group_id, "count":objects_per_turn});
+         req_count = req_count - 1;
+         comments = comments + response.items;
+         offset = offset + objects_per_turn;
+         if (response.count < offset){
+             return {"members":comments};
+         }
+         if (req_count < 1){
+             return {"members":comments, "last_offset":offset, "all_count":response.count};
+         }
+        }
+
+
+        :param group_id: group login or identity
+        :return: list of ids group members
+        """
+        members_result = self.get("execute.get_members", **{'group_id': group_id})
+        members_acc = members_result.get('members')
+        while members_result.get('offset'):
+            members_result = self.get("execute.get_members",
+                                   **{'group_id': group_id, 'offset': members_result.get('offset')})
+
+            members_acc.extend(members_result.get('members'))
+
+        content_result = ContentResult()
+        content_result.add_relations_for_group(group_id, list(set(members_acc)))
+        return content_result
+
 if __name__ == '__main__':
     vk = VK_API_Execute()
     vk.get_group_data(26953)

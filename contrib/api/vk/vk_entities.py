@@ -174,6 +174,9 @@ class ContentResult(object):
         else:
             self.__add_relation(relation_objects)
 
+    def add_relations_for_group(self, group_id, members):
+        self._relations[group_id]['members'].extend(members)
+
     def add_comments(self, comments):
         return self.__add_object(APIMessage, self._comments, comments)
 
